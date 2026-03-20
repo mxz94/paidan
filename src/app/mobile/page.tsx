@@ -7,6 +7,8 @@ import { LUOYANG_REGIONS } from "@/lib/regions";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
 import { MobileOrdersPanel } from "@/components/mobile-orders-panel";
 
+export const dynamic = "force-dynamic";
+
 type SearchParams = Promise<{
   tab?: string;
   region?: string;
