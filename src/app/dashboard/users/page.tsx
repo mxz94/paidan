@@ -1,0 +1,304 @@
+﻿import { redirect } from "next/navigation";
+import { getAuthSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { UserCreateModal } from "@/components/user-create-modal";
+import { UserImportModal } from "@/components/user-import-modal";
+import { UserLocationMapButton } from "@/components/user-location-map-button";
+import { UserLocationsMapModal } from "@/components/user-locations-map-modal";
+
+type SearchParams = Promise<{
+  created?: string;
+  imported?: string;
+  err?: string;
+  page?: string;
+  pageSize?: string;
+  keyword?: string;
+  roleId?: string;
+  accessMode?: string;
+}>;
+
+const errorText: Record<string, string> = {
+  invalid: "请完整填写信息（用户名至少3位，密码至少6位）。",
+  role: "角色不存在，请刷新后重试。",
+  exists: "用户名已存在，请换一个用户名。",
+  import_file: "请选择要导入的文件。",
+  import_invalid: "导入失败：文件格式或数据内容不正确，请检查后重试。",
+  import_limit: "导入失败：单次最多导入 500 条。",
+  import_role: "导入失败：存在无法匹配的角色（支持角色代码/名称/ID）。",
+};
+
+function buildQuery(params: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      search.set(key, String(value));
+    }
+  });
+  return search.toString();
+}
+
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const session = await getAuthSession();
+
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  if (session.user.roleCode !== "ADMIN") {
+    return (
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+        <h1 className="text-xl font-bold">无权限访问</h1>
+        <p className="mt-2 text-sm text-slate-600">仅管理员可以新增用户并分配角色。</p>
+      </section>
+    );
+  }
+
+  const params = await searchParams;
+  const roles = await prisma.role.findMany({ orderBy: { id: "asc" } });
+  const keyword = String(params.keyword ?? "").trim();
+  const roleId = Number(params.roleId ?? 0);
+  const accessMode = String(params.accessMode ?? "").trim();
+  const pageSize = Math.min(Math.max(Number(params.pageSize ?? 10), 5), 50);
+  const page = Math.max(Number(params.page ?? 1), 1);
+
+  const where: {
+    AND?: Array<Record<string, unknown>>;
+  } = {};
+  const andConditions: Array<Record<string, unknown>> = [];
+  if (keyword) {
+    andConditions.push({
+      OR: [
+        { username: { contains: keyword } },
+        { displayName: { contains: keyword } },
+      ],
+    });
+  }
+  if (Number.isInteger(roleId) && roleId > 0) {
+    andConditions.push({ roleId });
+  }
+  if (accessMode === "BACKEND" || accessMode === "MOBILE") {
+    andConditions.push({ accessMode });
+  }
+  if (andConditions.length > 0) {
+    where.AND = andConditions;
+  }
+
+  const queryWhere = Object.keys(where).length > 0 ? where : undefined;
+  const total = await prisma.user.count({ where: queryWhere });
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+
+  const users = await prisma.user.findMany({
+    where: queryWhere,
+    include: { role: true },
+    orderBy: { createdAt: "desc" },
+    skip: (currentPage - 1) * pageSize,
+    take: pageSize,
+  });
+  const mapUsers = await prisma.user.findMany({
+    where: queryWhere,
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      longitude: true,
+      latitude: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const commonQuery = {
+    page: currentPage,
+    pageSize,
+    keyword,
+    roleId: roleId > 0 ? roleId : undefined,
+    accessMode,
+  };
+
+  return (
+    <section className="space-y-6">
+      <header className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">用户管理</h1>
+            <p className="mt-2 text-sm text-slate-600">新增用户并分配角色，支持桌面和移动端。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <UserLocationsMapModal
+              users={mapUsers.map((item) => ({
+                id: item.id,
+                username: item.username,
+                displayName: item.displayName,
+                longitude: item.longitude,
+                latitude: item.latitude,
+              }))}
+            />
+            <UserImportModal
+              action={async (formData) => {
+                "use server";
+                const { importUsers } = await import("./actions");
+                await importUsers(formData);
+              }}
+            />
+            <UserCreateModal
+              roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+              action={async (formData) => {
+                "use server";
+                const { createUser } = await import("./actions");
+                await createUser(formData);
+              }}
+            />
+          </div>
+        </div>
+        {params.created === "1" ? (
+          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">用户创建成功</p>
+        ) : null}
+        {Number(params.imported ?? 0) > 0 ? (
+          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            用户导入成功，共 {Number(params.imported)} 条
+          </p>
+        ) : null}
+        {params.err ? (
+          <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorText[params.err] ?? "操作失败"}</p>
+        ) : null}
+      </header>
+
+      <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <h2 className="text-lg font-semibold">用户列表</h2>
+        <form className="mt-3 mb-3 flex items-center gap-2 overflow-x-auto rounded-lg border border-slate-200 p-2 whitespace-nowrap">
+          <input type="hidden" name="pageSize" value={pageSize} />
+          <input
+            name="keyword"
+            defaultValue={keyword}
+            placeholder="关键字：用户名/姓名"
+            className="h-8 w-52 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          />
+          <select
+            name="roleId"
+            defaultValue={roleId > 0 ? String(roleId) : ""}
+            className="h-8 w-36 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">全部角色</option>
+            {roles.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <select
+            name="accessMode"
+            defaultValue={accessMode}
+            className="h-8 w-32 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">全部端</option>
+            <option value="BACKEND">后台端</option>
+            <option value="MOBILE">移动端</option>
+          </select>
+          <button
+            type="submit"
+            className="h-8 shrink-0 rounded-md bg-slate-900 px-2.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
+          >
+            筛选
+          </button>
+          <a
+            href={`/dashboard/users?${buildQuery({ pageSize })}`}
+            className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-slate-300 px-2.5 text-[11px] font-semibold leading-none text-slate-700 transition hover:bg-slate-50"
+          >
+            重置
+          </a>
+        </form>
+        <div className="mb-3 text-sm text-slate-600">
+          共 {total} 条，当前第 {currentPage}/{totalPages} 页
+        </div>
+
+        <div className="mt-4 hidden overflow-x-auto md:block">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="px-2 py-2 font-medium">用户名</th>
+                <th className="px-2 py-2 font-medium">姓名</th>
+                <th className="px-2 py-2 font-medium">角色</th>
+                <th className="px-2 py-2 font-medium">登录端</th>
+                <th className="px-2 py-2 font-medium">经纬度</th>
+                <th className="px-2 py-2 font-medium">定位更新时间</th>
+                <th className="px-2 py-2 font-medium">创建时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id} className="border-b border-slate-100">
+                  <td className="px-2 py-3">{user.username}</td>
+                  <td className="px-2 py-3">{user.displayName}</td>
+                  <td className="px-2 py-3">{user.role.name}</td>
+                  <td className="px-2 py-3">{user.accessMode === "MOBILE" ? "移动端" : "后台端"}</td>
+                  <td className="px-2 py-3 text-slate-500">
+                    <UserLocationMapButton
+                      username={user.username}
+                      displayName={user.displayName}
+                      longitude={user.longitude}
+                      latitude={user.latitude}
+                    />
+                  </td>
+                  <td className="px-2 py-3 text-slate-500">
+                    {user.locationAt ? new Date(user.locationAt).toLocaleString("zh-CN") : "-"}
+                  </td>
+                  <td className="px-2 py-3 text-slate-500">{new Date(user.createdAt).toLocaleString("zh-CN")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <ul className="mt-4 space-y-3 md:hidden">
+          {users.map((user) => (
+            <li key={user.id} className="rounded-xl border border-slate-200 p-3">
+              <p className="text-sm font-semibold text-slate-900">{user.displayName}</p>
+              <p className="mt-1 text-xs text-slate-500">账号：{user.username}</p>
+              <p className="mt-1 text-xs text-slate-500">角色：{user.role.name}</p>
+              <p className="mt-1 text-xs text-slate-500">登录端：{user.accessMode === "MOBILE" ? "移动端" : "后台端"}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                经纬度：
+                <span className="ml-1 inline-block align-middle">
+                  <UserLocationMapButton
+                    username={user.username}
+                    displayName={user.displayName}
+                    longitude={user.longitude}
+                    latitude={user.latitude}
+                  />
+                </span>
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="text-slate-500">每页 {pageSize} 条</div>
+          <div className="flex gap-2">
+            <a
+              href={`/dashboard/users?${buildQuery({ ...commonQuery, page: Math.max(1, currentPage - 1) })}`}
+              className={`rounded-lg border px-3 py-1.5 ${
+                currentPage <= 1 ? "pointer-events-none border-slate-200 text-slate-300" : "border-slate-300 text-slate-700"
+              }`}
+            >
+              上一页
+            </a>
+            <a
+              href={`/dashboard/users?${buildQuery({ ...commonQuery, page: Math.min(totalPages, currentPage + 1) })}`}
+              className={`rounded-lg border px-3 py-1.5 ${
+                currentPage >= totalPages
+                  ? "pointer-events-none border-slate-200 text-slate-300"
+                  : "border-slate-300 text-slate-700"
+              }`}
+            >
+              下一页
+            </a>
+          </div>
+        </div>
+      </article>
+    </section>
+  );
+}

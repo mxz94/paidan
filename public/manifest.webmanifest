@@ -1,0 +1,33 @@
+{
+  "name": "派单管理系统",
+  "short_name": "派单系统",
+  "description": "客服端与后台一体化派单管理系统",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "zh-CN",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "客服端",
+      "short_name": "客服端",
+      "url": "/mobile"
+    },
+    {
+      "name": "后台管理",
+      "short_name": "后台",
+      "url": "/dashboard"
+    }
+  ]
+}
+

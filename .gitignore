@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# local runtime artifacts
+dev.log
+dev.err.log
+.askpass.bat
+paidan-deploy.tgz
+public/uploads/
+prisma/dev.db
+prisma/dev.db-journal

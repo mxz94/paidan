@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  accessMode   String   @default("BACKEND")
+  roleId       Int
+  longitude    Float?
+  latitude     Float?
+  locationAt   DateTime?
+  role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  dispatches   DispatchOrder[] @relation("CreatedOrders")
+  claimedOrders DispatchOrder[] @relation("ClaimedOrders")
+  dispatchRecords DispatchOrderRecord[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Role {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String     @unique
+  users     User[]
+  roleMenus RoleMenu[]
+}
+
+model Menu {
+  id         Int        @id @default(autoincrement())
+  key        String     @unique
+  name       String
+  path       String
+  icon       String?
+  sort       Int        @default(0)
+  parentId   Int?
+  parent     Menu?      @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Menu[]     @relation("MenuTree")
+  roleMenus  RoleMenu[]
+}
+
+model RoleMenu {
+  roleId Int
+  menuId Int
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menu   Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, menuId])
+}
+
+model Package {
+  id          Int      @id @default(autoincrement())
+  name        String
+  code        String   @unique
+  price       Float
+  description String?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  dispatches  DispatchOrder[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DispatchOrder {
+  id            Int      @id @default(autoincrement())
+  title         String
+  region        String
+  address       String
+  longitude     Float?
+  latitude      Float?
+  phone         String
+  customerType  String
+  remark        String?
+  photoUrl      String?
+  isDeleted     Boolean  @default(false)
+  status        String   @default("PENDING")
+  packageId     Int?
+  package       Package? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  createdById   Int
+  createdBy     User     @relation("CreatedOrders", fields: [createdById], references: [id], onDelete: Restrict)
+  claimedById   Int?
+  claimedBy     User?    @relation("ClaimedOrders", fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt     DateTime?
+  records       DispatchOrderRecord[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model DispatchOrderRecord {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  order      DispatchOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  operatorId Int
+  operator   User     @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  actionType String
+  remark     String?
+  photoUrl   String?
+  operatorLongitude Float?
+  operatorLatitude  Float?
+  createdAt  DateTime @default(now())
+}
