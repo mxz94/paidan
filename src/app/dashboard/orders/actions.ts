@@ -10,6 +10,7 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
+import { isTenantAdminRole } from "@/lib/tenant";
 
 const createDispatchSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -312,6 +313,7 @@ async function findOrCreateInviterUserInTx(
   tx: Prisma.TransactionClient,
   inviterName: string,
   fallbackUserId: number,
+  tenantId: number,
   defaultRoleId: number | null,
   cached = new Map<string, number>(),
 ) {
@@ -325,6 +327,7 @@ async function findOrCreateInviterUserInTx(
 
   const existed = await tx.user.findFirst({
     where: {
+      tenantId,
       OR: [{ username: name }, { displayName: name }],
     },
     select: { id: true },
@@ -354,6 +357,7 @@ async function findOrCreateInviterUserInTx(
       passwordHash,
       roleId: defaultRoleId,
       accessMode: "BACKEND",
+      tenantId,
     },
     select: { id: true },
   });
@@ -366,6 +370,13 @@ export async function createDispatchOrder(formData: FormData) {
 
   if (!session?.user?.id) {
     redirect("/login");
+  }
+  const me = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { tenantId: true },
+  });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=invalid");
   }
 
   const longitude = parseNullableNumber(formData.get("longitude"));
@@ -394,6 +405,7 @@ export async function createDispatchOrder(formData: FormData) {
   const enteredTitle = parsed.data.title.trim();
   const matchedPackage = await prisma.package.findFirst({
     where: {
+      tenantId: Number(me.tenantId),
       isActive: true,
       name: enteredTitle,
     },
@@ -412,6 +424,7 @@ export async function createDispatchOrder(formData: FormData) {
       customerType,
       remark: remark || null,
       photoUrl,
+      tenantId: Number(me.tenantId),
       createdById: Number(session.user.id),
       status: "PENDING",
     },
@@ -426,6 +439,13 @@ export async function importDispatchOrders(formData: FormData) {
 
   if (!session?.user?.id) {
     redirect("/login");
+  }
+  const me = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { tenantId: true },
+  });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=import_invalid");
   }
 
   const file = formData.get("file");
@@ -509,7 +529,7 @@ export async function importDispatchOrders(formData: FormData) {
     }
 
     const matchedPackage = await prisma.package.findFirst({
-      where: { isActive: true, name: parsed.data.title },
+      where: { tenantId: Number(me.tenantId), isActive: true, name: parsed.data.title },
       select: { id: true },
     });
 
@@ -555,6 +575,7 @@ export async function importDispatchOrders(formData: FormData) {
           customerType: normalizedCustomerType,
           remark: item.remark || null,
           status: "PENDING",
+          tenantId: Number(me.tenantId),
           createdById: Number(session.user.id),
           claimedById: null,
           claimedAt: null,
@@ -572,6 +593,13 @@ export async function importLeadDispatchOrders(formData: FormData) {
 
   if (!session?.user?.id) {
     redirect("/login");
+  }
+  const me = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { tenantId: true },
+  });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=import_invalid");
   }
 
   const file = formData.get("file");
@@ -630,8 +658,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
 
   const defaultRole =
     (await prisma.role.findFirst({
-      where: { code: { not: "ADMIN" } },
-      orderBy: { id: "asc" },
+      where: { code: "USER" },
       select: { id: true },
     })) ??
     (await prisma.role.findFirst({
@@ -669,7 +696,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
     }
 
     const matchedPackage = await prisma.package.findFirst({
-      where: { isActive: true, name: parsed.data.numberType },
+      where: { tenantId: Number(me.tenantId), isActive: true, name: parsed.data.numberType },
       select: { id: true },
     });
     const addressKey = parsed.data.address.trim();
@@ -702,6 +729,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
         tx,
         payload.inviterName,
         Number(session.user.id),
+        Number(me.tenantId),
         defaultRoleId,
         createdByCache,
       );
@@ -717,6 +745,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
           customerType: payload.customerType,
           remark: payload.remark,
           status: "PENDING",
+          tenantId: Number(me.tenantId),
           createdById: creatorId,
           claimedById: null,
           claimedAt: null,
@@ -741,7 +770,9 @@ const updateDispatchSchema = z.object({
 });
 
 async function canAccessOrder(orderId: number, userId: number, roleCode: string) {
-  const where = { id: orderId, isDeleted: false };
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: { tenantId: true } });
+  if (!me?.tenantId) return null;
+  const where = { id: orderId, isDeleted: false, tenantId: Number(me.tenantId) };
   return prisma.dispatchOrder.findFirst({ where, select: { id: true } });
 }
 
@@ -772,7 +803,7 @@ async function hasMenuPermission(userId: number, menuKey: string) {
   });
 
   if (!user) return false;
-  if (user.role.code === "ADMIN") return true;
+  if (isTenantAdminRole(user.role.code)) return true;
   return user.role.roleMenus.some((item) => item.menu.key === menuKey);
 }
 
@@ -781,6 +812,13 @@ export async function updateDispatchOrder(formData: FormData) {
 
   if (!session?.user?.id) {
     redirect("/login");
+  }
+  const me = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { tenantId: true },
+  });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=invalid");
   }
 
   const longitude = parseNullableNumber(formData.get("longitude"));
@@ -799,17 +837,17 @@ export async function updateDispatchOrder(formData: FormData) {
 
   const order = await prisma.dispatchOrder.findFirst({
     where:
-      session.user.roleCode === "ADMIN"
-        ? { id: parsed.data.orderId, isDeleted: false, status: "PENDING" }
-        : { id: parsed.data.orderId, createdById: Number(session.user.id), isDeleted: false, status: "PENDING" },
+      isTenantAdminRole(session.user.roleCode)
+        ? { id: parsed.data.orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
+        : { id: parsed.data.orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false, status: "PENDING" },
     select: { id: true },
   });
   if (!order) {
     redirect("/dashboard/orders?err=edit_state");
   }
 
-  const selectedPackage = await prisma.package.findUnique({
-    where: { id: parsed.data.packageId },
+  const selectedPackage = await prisma.package.findFirst({
+    where: { id: parsed.data.packageId, tenantId: Number(me.tenantId) },
     select: { id: true, name: true, code: true },
   });
   if (!selectedPackage) {
@@ -857,6 +895,10 @@ export async function appendDispatchOrderRecordByBackend(formData: FormData) {
   }
 
   const operatorId = Number(session.user.id);
+  const me = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  if (!me?.tenantId) {
+    redirect(`/dashboard/orders/${Number(formData.get("orderId")) || ""}?op=append0`);
+  }
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) {
     redirect(`/dashboard/orders/${orderId || ""}?op=append0`);
@@ -883,6 +925,7 @@ export async function appendDispatchOrderRecordByBackend(formData: FormData) {
       orderId,
       operatorId,
       actionType: "APPEND",
+      tenantId: Number(me.tenantId),
       remark: remark || null,
       photoUrl,
       operatorLongitude: snapshot.operatorLongitude,
@@ -902,6 +945,10 @@ export async function assignDispatchOrder(formData: FormData) {
   }
 
   const operatorId = Number(session.user.id);
+  const me = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=assign_invalid");
+  }
   const hasPerm = await hasMenuPermission(operatorId, "perm-order-dispatch-assign");
   if (!hasPerm) {
     redirect("/dashboard/orders?err=assign_perm");
@@ -914,7 +961,7 @@ export async function assignDispatchOrder(formData: FormData) {
   }
 
   const targetUser = await prisma.user.findFirst({
-    where: { id: userId, accessMode: "MOBILE" },
+    where: { id: userId, tenantId: Number(me.tenantId), accessMode: "MOBILE" },
     select: { id: true, displayName: true },
   });
   if (!targetUser) {
@@ -930,6 +977,7 @@ export async function assignDispatchOrder(formData: FormData) {
     const updated = await tx.dispatchOrder.updateMany({
       where: {
         id: orderId,
+        tenantId: Number(me.tenantId),
         isDeleted: false,
         status: "PENDING",
         claimedById: null,
@@ -946,6 +994,7 @@ export async function assignDispatchOrder(formData: FormData) {
         data: {
           orderId,
           operatorId,
+          tenantId: Number(me.tenantId),
           actionType: "CLAIM",
           remark: `后台派单给：${targetUser.displayName}`,
         },
@@ -975,15 +1024,19 @@ export async function deleteDispatchOrder(formData: FormData) {
   }
 
   const operatorId = Number(session.user.id);
+  const me = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  if (!me?.tenantId) {
+    redirect("/dashboard/orders?err=delete_state");
+  }
   const hasPerm = await hasMenuPermission(operatorId, "perm-order-delete-btn");
   if (!hasPerm) {
     redirect("/dashboard/orders?err=delete_perm");
   }
 
   const where =
-    session.user.roleCode === "ADMIN"
-      ? { id: orderId, isDeleted: false, status: "PENDING" }
-      : { id: orderId, createdById: operatorId, isDeleted: false, status: "PENDING" };
+      isTenantAdminRole(session.user.roleCode)
+      ? { id: orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
+      : { id: orderId, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" };
   const order = await prisma.dispatchOrder.findFirst({ where, select: { id: true } });
   if (!order) {
     redirect("/dashboard/orders?err=delete_state");
@@ -1015,6 +1068,10 @@ export async function deleteDispatchOrdersBatch(formData: FormData) {
   const redirectBase = `/dashboard/orders${qs.toString() ? `?${qs.toString()}` : ""}`;
 
   const operatorId = Number(session.user.id);
+  const me = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  if (!me?.tenantId) {
+    redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=delete_state`);
+  }
   const hasPerm = await hasMenuPermission(operatorId, "perm-order-delete-btn");
   if (!hasPerm) {
     redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=delete_perm`);
@@ -1031,9 +1088,9 @@ export async function deleteDispatchOrdersBatch(formData: FormData) {
 
   const uniqueIds = Array.from(new Set(orderIds));
   const where =
-    session.user.roleCode === "ADMIN"
-      ? { id: { in: uniqueIds }, isDeleted: false, status: "PENDING" as const }
-      : { id: { in: uniqueIds }, createdById: operatorId, isDeleted: false, status: "PENDING" as const };
+    isTenantAdminRole(session.user.roleCode)
+      ? { id: { in: uniqueIds }, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
+      : { id: { in: uniqueIds }, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" as const };
 
   const result = await prisma.dispatchOrder.updateMany({
     where,
@@ -1074,6 +1131,10 @@ export async function batchOperateDispatchOrders(formData: FormData) {
   }
 
   const operatorId = Number(session.user.id);
+  const me = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  if (!me?.tenantId) {
+    redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=assign_invalid`);
+  }
   const intent = String(formData.get("intent") ?? "").trim();
 
   if (intent === "assign") {
@@ -1088,7 +1149,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     }
 
     const targetUser = await prisma.user.findFirst({
-      where: { id: userId, accessMode: "MOBILE" },
+      where: { id: userId, tenantId: Number(me.tenantId), accessMode: "MOBILE" },
       select: { id: true, displayName: true },
     });
     if (!targetUser) {
@@ -1100,6 +1161,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
       const candidateOrders = await tx.dispatchOrder.findMany({
         where: {
           id: { in: uniqueIds },
+          tenantId: Number(me.tenantId),
           isDeleted: false,
           status: "PENDING",
           claimedById: null,
@@ -1115,7 +1177,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
       }
 
       await tx.dispatchOrder.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, tenantId: Number(me.tenantId) },
         data: {
           status: "CLAIMED",
           claimedById: targetUser.id,
@@ -1127,6 +1189,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
         data: ids.map((id) => ({
           orderId: id,
           operatorId,
+          tenantId: Number(me.tenantId),
           actionType: "CLAIM",
           remark: `后台批量派单给：${targetUser.displayName}`,
         })),
@@ -1149,9 +1212,9 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     }
 
     const where =
-      session.user.roleCode === "ADMIN"
-        ? { id: { in: uniqueIds }, isDeleted: false, status: "PENDING" as const }
-        : { id: { in: uniqueIds }, createdById: operatorId, isDeleted: false, status: "PENDING" as const };
+      isTenantAdminRole(session.user.roleCode)
+        ? { id: { in: uniqueIds }, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
+        : { id: { in: uniqueIds }, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" as const };
 
     const candidates = await prisma.dispatchOrder.findMany({
       where,
@@ -1162,7 +1225,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     }
 
     const result = await prisma.dispatchOrder.updateMany({
-      where: { id: { in: uniqueIds }, isDeleted: false, status: "PENDING" },
+      where: { id: { in: uniqueIds }, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" },
       data: { isDeleted: true },
     });
     revalidatePath("/dashboard/orders");
@@ -1174,3 +1237,6 @@ export async function batchOperateDispatchOrders(formData: FormData) {
 
   redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=assign_invalid`);
 }
+
+
+

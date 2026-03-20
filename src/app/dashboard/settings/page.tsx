@@ -2,6 +2,7 @@
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureSystemConfigTable, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
+import { isSuperAdminRole, isTenantAdminRole } from "@/lib/tenant";
 import { saveSystemConfig } from "./actions";
 
 type SearchParams = Promise<{ saved?: string; err?: string }>;
@@ -19,7 +20,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   if (!session?.user?.id) {
     redirect("/login");
   }
-  if (session.user.roleCode !== "ADMIN") {
+  if (!isTenantAdminRole(session.user.roleCode) || isSuperAdminRole(session.user.roleCode)) {
     redirect("/dashboard");
   }
 

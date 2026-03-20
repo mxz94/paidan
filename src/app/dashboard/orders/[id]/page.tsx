@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { OrderAppendRecordModal } from "@/components/order-append-record-modal";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
 import { appendDispatchOrderRecordByBackend } from "../actions";
@@ -48,6 +49,10 @@ export default async function OrderDetailPage({
   if (!session?.user?.id) {
     redirect("/login");
   }
+  const me = await getSessionUserWithTenant();
+  if (!me.tenantId && me.role.code !== "SUPER_ADMIN") {
+    redirect("/dashboard");
+  }
 
   const routeParams = await params;
   const query = await searchParams;
@@ -57,7 +62,11 @@ export default async function OrderDetailPage({
     notFound();
   }
 
-  const where = { id: orderId, isDeleted: false };
+  const where = {
+    id: orderId,
+    isDeleted: false,
+    ...(me.tenantId ? { tenantId: me.tenantId } : {}),
+  };
 
   const order = await prisma.dispatchOrder.findFirst({
     where,
@@ -78,7 +87,9 @@ export default async function OrderDetailPage({
   if (!order) {
     notFound();
   }
-  const canEdit = order.status === "PENDING" && (session.user.roleCode === "ADMIN" || order.createdById === Number(session.user.id));
+  const canEdit =
+    order.status === "PENDING" &&
+    (isTenantAdminRole(session.user.roleCode) || order.createdById === Number(session.user.id));
   const opMessage: Record<string, { text: string; cls: string }> = {
     append1: { text: "追加记录成功", cls: "bg-emerald-50 text-emerald-700" },
     append0: { text: "追加记录失败：无权限或单据不存在", cls: "bg-rose-50 text-rose-700" },
@@ -273,5 +284,6 @@ export default async function OrderDetailPage({
     </section>
   );
 }
+
 
 

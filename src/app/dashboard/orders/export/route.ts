@@ -24,6 +24,13 @@ export async function GET(request: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
+  const me = await prisma.user.findUnique({
+    where: { id: Number(session.user.id) },
+    select: { tenantId: true, role: { select: { code: true } } },
+  });
+  if (!me || (!me.tenantId && me.role.code !== "SUPER_ADMIN")) {
+    return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+  }
 
   const { searchParams } = new URL(request.url);
   const keyword = String(searchParams.get("keyword") ?? "").trim();
@@ -32,9 +39,10 @@ export async function GET(request: Request) {
   const packageId = Number(searchParams.get("packageId") ?? 0);
 
   const where: {
+    tenantId?: number;
     isDeleted: boolean;
     AND?: Array<Record<string, unknown>>;
-  } = { isDeleted: false };
+  } = { isDeleted: false, ...(me.tenantId ? { tenantId: me.tenantId } : {}) };
   const andConditions: Array<Record<string, unknown>> = [];
 
   if (keyword) {

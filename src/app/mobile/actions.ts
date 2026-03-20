@@ -12,6 +12,11 @@ const DEFAULT_PRECISE_DAILY_LIMIT = 3;
 const DEFAULT_SERVICE_DAILY_LIMIT = 20;
 const PRECISE_FINISH_RADIUS_KM = 2;
 
+async function getOperatorTenantId(operatorId: number) {
+  const user = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
+  return user?.tenantId ?? null;
+}
+
 async function getOperatorLocationSnapshot(operatorId: number) {
   const me = await prisma.user.findUnique({
     where: { id: operatorId },
@@ -44,9 +49,7 @@ function buildMobileQuery(formData: FormData, nextTab: "new" | "doing" | "done",
   }
   if (extra) {
     Object.entries(extra).forEach(([key, value]) => {
-      if (value) {
-        search.set(key, value);
-      }
+      if (value) search.set(key, value);
     });
   }
   return `/mobile?${search.toString()}`;
@@ -55,10 +58,7 @@ function buildMobileQuery(formData: FormData, nextTab: "new" | "doing" | "done",
 export async function claimDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) {
@@ -66,6 +66,9 @@ export async function claimDispatchOrder(formData: FormData) {
   }
 
   const operatorId = Number(session.user.id);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
+
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const config = await getSystemConfigValues([
     SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit,
@@ -83,15 +86,14 @@ export async function claimDispatchOrder(formData: FormData) {
   const targetOrder = await prisma.dispatchOrder.findFirst({
     where: {
       id: orderId,
+      tenantId,
       isDeleted: false,
       status: "PENDING",
       claimedById: null,
     },
     select: { id: true, customerType: true },
   });
-  if (!targetOrder) {
-    redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
-  }
+  if (!targetOrder) redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
 
   const isPreciseOrder = (targetOrder.customerType || "").includes("精准");
   if (!claimLimitDisabled) {
@@ -101,6 +103,7 @@ export async function claimDispatchOrder(formData: FormData) {
     const todayClaimedCount = await prisma.dispatchOrderRecord.count({
       where: {
         operatorId,
+        tenantId,
         actionType: "CLAIM",
         createdAt: { gte: dayStart, lte: dayEnd },
         order: isPreciseOrder
@@ -119,13 +122,14 @@ export async function claimDispatchOrder(formData: FormData) {
     const updated = await tx.dispatchOrder.updateMany({
       where: {
         id: orderId,
+        tenantId,
         isDeleted: false,
         status: "PENDING",
         claimedById: null,
       },
       data: {
         status: "CLAIMED",
-        claimedById: Number(session.user.id),
+        claimedById: operatorId,
         claimedAt: new Date(),
       },
     });
@@ -135,6 +139,7 @@ export async function claimDispatchOrder(formData: FormData) {
         data: {
           orderId,
           operatorId,
+          tenantId,
           actionType: "CLAIM",
           remark: "领取单据",
           operatorLongitude: snapshot.operatorLongitude,
@@ -147,20 +152,14 @@ export async function claimDispatchOrder(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) {
-    redirect(buildMobileQuery(formData, "new", { claimed: "1" }));
-  }
-
+  if (result > 0) redirect(buildMobileQuery(formData, "new", { claimed: "1" }));
   redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
 }
 
 export async function appendDispatchOrderRecord(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) {
@@ -170,36 +169,25 @@ export async function appendDispatchOrderRecord(formData: FormData) {
   const remark = String(formData.get("remark") ?? "").trim();
   const photo = formData.get("photo");
   const photoUrl = photo instanceof File ? await saveCompressedImage(photo, "orders") : undefined;
-
-  if (photoUrl === "__TOO_LARGE__") {
-    redirect(buildMobileQuery(formData, "doing", { op: "file" }));
-  }
-
-  if (!remark && !photoUrl) {
-    redirect(buildMobileQuery(formData, "doing", { op: "append-empty" }));
-  }
+  if (photoUrl === "__TOO_LARGE__") redirect(buildMobileQuery(formData, "doing", { op: "file" }));
+  if (!remark && !photoUrl) redirect(buildMobileQuery(formData, "doing", { op: "append-empty" }));
 
   const operatorId = Number(session.user.id);
-  const snapshot = await getOperatorLocationSnapshot(operatorId);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "append0" }));
 
+  const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
-    where: {
-      id: orderId,
-      isDeleted: false,
-      status: "CLAIMED",
-      claimedById: operatorId,
-    },
+    where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
     select: { id: true },
   });
-
-  if (!order) {
-    redirect(buildMobileQuery(formData, "doing", { op: "append0" }));
-  }
+  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "append0" }));
 
   await prisma.dispatchOrderRecord.create({
     data: {
       orderId,
       operatorId,
+      tenantId,
       actionType: "APPEND",
       remark: remark || null,
       photoUrl,
@@ -215,68 +203,35 @@ export async function appendDispatchOrderRecord(formData: FormData) {
 export async function finishDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
-  }
+  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
 
   const operatorId = Number(session.user.id);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
-    where: {
-      id: orderId,
-      isDeleted: false,
-      status: "CLAIMED",
-      claimedById: operatorId,
-    },
-    select: {
-      id: true,
-      customerType: true,
-      longitude: true,
-      latitude: true,
-    },
+    where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
+    select: { id: true, customerType: true, longitude: true, latitude: true },
   });
-  if (!order) {
-    redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
-  }
+  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
 
   const isPrecise = (order.customerType || "").includes("精准");
   if (isPrecise) {
-    if (
-      snapshot.operatorLatitude == null ||
-      snapshot.operatorLongitude == null ||
-      order.latitude == null ||
-      order.longitude == null
-    ) {
+    if (snapshot.operatorLatitude == null || snapshot.operatorLongitude == null || order.latitude == null || order.longitude == null) {
       redirect(buildMobileQuery(formData, "doing", { op: "finish-distance" }));
     }
-    const distance = calcDistanceKm(
-      snapshot.operatorLatitude,
-      snapshot.operatorLongitude,
-      order.latitude,
-      order.longitude,
-    );
-    if (distance > PRECISE_FINISH_RADIUS_KM) {
-      redirect(buildMobileQuery(formData, "doing", { op: "finish-distance" }));
-    }
+    const distance = calcDistanceKm(snapshot.operatorLatitude, snapshot.operatorLongitude, order.latitude, order.longitude);
+    if (distance > PRECISE_FINISH_RADIUS_KM) redirect(buildMobileQuery(formData, "doing", { op: "finish-distance" }));
   }
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.dispatchOrder.updateMany({
-      where: {
-        id: orderId,
-        isDeleted: false,
-        status: "CLAIMED",
-        claimedById: operatorId,
-      },
-      data: {
-        status: "DONE",
-      },
+      where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
+      data: { status: "DONE" },
     });
 
     if (updated.count > 0) {
@@ -284,6 +239,7 @@ export async function finishDispatchOrder(formData: FormData) {
         data: {
           orderId,
           operatorId,
+          tenantId,
           actionType: "FINISH",
           remark: "单据完结",
           operatorLongitude: snapshot.operatorLongitude,
@@ -291,82 +247,46 @@ export async function finishDispatchOrder(formData: FormData) {
         },
       });
     }
-
     return updated.count;
   });
 
   revalidatePath("/mobile");
-  if (result > 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "finish1" }));
-  }
+  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "finish1" }));
   redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
 }
 
 export async function endDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
-  }
+  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
 
   const operatorId = Number(session.user.id);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
-    where: {
-      id: orderId,
-      isDeleted: false,
-      status: "CLAIMED",
-      claimedById: operatorId,
-    },
-    select: {
-      id: true,
-      customerType: true,
-      longitude: true,
-      latitude: true,
-    },
+    where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
+    select: { id: true, customerType: true, longitude: true, latitude: true },
   });
-  if (!order) {
-    redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
-  }
+  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
 
   const isPrecise = (order.customerType || "").includes("精准");
   if (isPrecise) {
-    if (
-      snapshot.operatorLatitude == null ||
-      snapshot.operatorLongitude == null ||
-      order.latitude == null ||
-      order.longitude == null
-    ) {
+    if (snapshot.operatorLatitude == null || snapshot.operatorLongitude == null || order.latitude == null || order.longitude == null) {
       redirect(buildMobileQuery(formData, "doing", { op: "end-distance" }));
     }
-    const distance = calcDistanceKm(
-      snapshot.operatorLatitude,
-      snapshot.operatorLongitude,
-      order.latitude,
-      order.longitude,
-    );
-    if (distance > PRECISE_FINISH_RADIUS_KM) {
-      redirect(buildMobileQuery(formData, "doing", { op: "end-distance" }));
-    }
+    const distance = calcDistanceKm(snapshot.operatorLatitude, snapshot.operatorLongitude, order.latitude, order.longitude);
+    if (distance > PRECISE_FINISH_RADIUS_KM) redirect(buildMobileQuery(formData, "doing", { op: "end-distance" }));
   }
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.dispatchOrder.updateMany({
-      where: {
-        id: orderId,
-        isDeleted: false,
-        status: "CLAIMED",
-        claimedById: operatorId,
-      },
-      data: {
-        status: "ENDED",
-      },
+      where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
+      data: { status: "ENDED" },
     });
 
     if (updated.count > 0) {
@@ -374,6 +294,7 @@ export async function endDispatchOrder(formData: FormData) {
         data: {
           orderId,
           operatorId,
+          tenantId,
           actionType: "END",
           remark: "单据结束",
           operatorLongitude: snapshot.operatorLongitude,
@@ -381,29 +302,21 @@ export async function endDispatchOrder(formData: FormData) {
         },
       });
     }
-
     return updated.count;
   });
 
   revalidatePath("/mobile");
-  if (result > 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "end1" }));
-  }
+  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "end1" }));
   redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
 }
 
 export async function rescheduleDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
-  }
+  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
 
   const scheduleAtText = String(formData.get("scheduleAt") ?? "").trim();
   const scheduleAt = scheduleAtText ? new Date(scheduleAtText) : null;
@@ -413,26 +326,21 @@ export async function rescheduleDispatchOrder(formData: FormData) {
 
   const remark = String(formData.get("remark") ?? "").trim();
   const operatorId = Number(session.user.id);
-  const snapshot = await getOperatorLocationSnapshot(operatorId);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
 
+  const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
-    where: {
-      id: orderId,
-      isDeleted: false,
-      status: "CLAIMED",
-      claimedById: operatorId,
-    },
+    where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
     select: { id: true },
   });
-
-  if (!order) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
-  }
+  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
 
   await prisma.dispatchOrderRecord.create({
     data: {
       orderId,
       operatorId,
+      tenantId,
       actionType: "RESCHEDULE",
       remark: `改约时间：${new Date(scheduleAt).toLocaleString("zh-CN")}${remark ? `；备注：${remark}` : ""}`,
       operatorLongitude: snapshot.operatorLongitude,
@@ -447,28 +355,21 @@ export async function rescheduleDispatchOrder(formData: FormData) {
 export async function returnDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
-
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
+  if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
-  }
+  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
 
   const operatorId = Number(session.user.id);
-  const snapshot = await getOperatorLocationSnapshot(operatorId);
+  const tenantId = await getOperatorTenantId(operatorId);
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
 
+  const snapshot = await getOperatorLocationSnapshot(operatorId);
   const remark = String(formData.get("remark") ?? "").trim();
+
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.dispatchOrder.updateMany({
-      where: {
-        id: orderId,
-        isDeleted: false,
-        status: "CLAIMED",
-        claimedById: operatorId,
-      },
+      where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
       data: {
         status: "PENDING",
         claimedById: null,
@@ -481,6 +382,7 @@ export async function returnDispatchOrder(formData: FormData) {
         data: {
           orderId,
           operatorId,
+          tenantId,
           actionType: "RETURN",
           remark: remark || "退单回待领取",
           operatorLongitude: snapshot.operatorLongitude,
@@ -488,13 +390,10 @@ export async function returnDispatchOrder(formData: FormData) {
         },
       });
     }
-
     return updated.count;
   });
 
   revalidatePath("/mobile");
-  if (result > 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "return1" }));
-  }
+  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "return1" }));
   redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
 }

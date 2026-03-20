@@ -1,6 +1,7 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { PackageCreateModal } from "@/components/package-create-modal";
 import { PackageImportModal } from "@/components/package-import-modal";
 
@@ -25,7 +26,8 @@ export default async function PackagesPage({
     redirect("/login");
   }
 
-  if (session.user.roleCode !== "ADMIN") {
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
@@ -36,6 +38,7 @@ export default async function PackagesPage({
 
   const params = await searchParams;
   const packages = await prisma.package.findMany({
+    where: { tenantId: Number(me.tenantId) },
     orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
   });
 
@@ -122,3 +125,4 @@ export default async function PackagesPage({
     </section>
   );
 }
+

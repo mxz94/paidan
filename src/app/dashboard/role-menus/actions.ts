@@ -2,13 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
 export async function saveRoleMenus(formData: FormData) {
-  const session = await getAuthSession();
-
-  if (!session?.user || session.user.roleCode !== "ADMIN") {
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
     redirect("/dashboard");
   }
 
@@ -20,6 +19,14 @@ export async function saveRoleMenus(formData: FormData) {
 
   if (!Number.isInteger(roleId) || roleId <= 0) {
     redirect("/dashboard/role-menus");
+  }
+
+  const targetRole = await prisma.role.findFirst({
+    where: { id: roleId, tenantId: Number(me.tenantId) },
+    select: { id: true, isBuiltin: true },
+  });
+  if (!targetRole || targetRole.isBuiltin) {
+    redirect("/dashboard/role-menus?err=forbidden");
   }
 
   await prisma.$transaction(async (tx) => {

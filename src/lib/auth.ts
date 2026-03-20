@@ -27,7 +27,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { username: parsed.data.username },
-          include: { role: true },
+          include: { role: true, tenant: true },
         });
 
         if (!user) {
@@ -39,6 +39,10 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        if (user.role.code !== "SUPER_ADMIN" && (!user.tenantId || !user.tenant?.isActive)) {
+          return null;
+        }
+
         return {
           id: String(user.id),
           name: user.displayName,
@@ -46,6 +50,8 @@ export const authOptions: NextAuthOptions = {
           roleCode: user.role.code,
           roleName: user.role.name,
           accessMode: user.accessMode,
+          tenantId: user.tenantId ? String(user.tenantId) : "",
+          tenantCode: user.tenant?.code ?? "",
         };
       },
     }),
@@ -58,6 +64,8 @@ export const authOptions: NextAuthOptions = {
         token.roleName = user.roleName;
         token.username = user.username;
         token.accessMode = user.accessMode;
+        token.tenantId = user.tenantId;
+        token.tenantCode = user.tenantCode;
       }
       return token;
     },
@@ -68,6 +76,8 @@ export const authOptions: NextAuthOptions = {
         session.user.roleName = String(token.roleName ?? "");
         session.user.username = String(token.username ?? "");
         session.user.accessMode = String(token.accessMode ?? "BACKEND");
+        session.user.tenantId = String(token.tenantId ?? "");
+        session.user.tenantCode = String(token.tenantCode ?? "");
       }
       return session;
     },

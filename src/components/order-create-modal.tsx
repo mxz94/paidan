@@ -23,7 +23,7 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
   const [longitude, setLongitude] = useState("");
   const [latitude, setLatitude] = useState("");
 
-  const defaultTitle = packages.find((item) => item.isDefault)?.name ?? packages[0]?.name ?? "";
+  const defaultTitle = "";
 
   return (
     <>
@@ -58,9 +58,10 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                     required
                     defaultValue={defaultTitle}
                     list="order-title-options"
-                    placeholder="可选择套餐名称，也可手动输入"
+                    placeholder="直接输入标题（无需先建套餐）"
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   />
+                  <p className="mt-1 text-xs text-slate-500">可直接输入；若存在同名套餐会自动关联。</p>
                   <datalist id="order-title-options">
                     {packages.map((item) => (
                       <option key={item.id} value={item.name} />
@@ -165,7 +166,6 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={packages.length === 0}
                   className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   提交单据

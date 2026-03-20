@@ -4,6 +4,7 @@ import { OrderEditForm } from "@/components/order-edit-form";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { updateDispatchOrder } from "../../actions";
 
 type Params = Promise<{ id: string }>;
@@ -14,6 +15,10 @@ export default async function EditOrderPage({ params }: { params: Params }) {
   if (!session?.user?.id) {
     redirect("/login");
   }
+  const me = await getSessionUserWithTenant();
+  if (!me.tenantId && me.role.code !== "SUPER_ADMIN") {
+    redirect("/dashboard");
+  }
 
   const routeParams = await params;
   const orderId = Number(routeParams.id);
@@ -22,9 +27,9 @@ export default async function EditOrderPage({ params }: { params: Params }) {
   }
 
   const where =
-    session.user.roleCode === "ADMIN"
-      ? { id: orderId, isDeleted: false }
-      : { id: orderId, createdById: Number(session.user.id), isDeleted: false };
+    isTenantAdminRole(session.user.roleCode)
+      ? { id: orderId, isDeleted: false, ...(me.tenantId ? { tenantId: me.tenantId } : {}) }
+      : { id: orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false };
 
   const [order, packages] = await Promise.all([
     prisma.dispatchOrder.findFirst({
@@ -43,7 +48,7 @@ export default async function EditOrderPage({ params }: { params: Params }) {
       },
     }),
     prisma.package.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...(me.tenantId ? { tenantId: me.tenantId } : {}) },
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
       select: { id: true, name: true, code: true },
     }),
@@ -101,3 +106,4 @@ export default async function EditOrderPage({ params }: { params: Params }) {
     </section>
   );
 }
+

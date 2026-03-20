@@ -18,10 +18,12 @@ model User {
   passwordHash String
   displayName  String
   accessMode   String   @default("BACKEND")
+  tenantId     Int?
   roleId       Int
   longitude    Float?
   latitude     Float?
   locationAt   DateTime?
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
   dispatches   DispatchOrder[] @relation("CreatedOrders")
   claimedOrders DispatchOrder[] @relation("ClaimedOrders")
@@ -33,7 +35,10 @@ model User {
 model Role {
   id        Int        @id @default(autoincrement())
   code      String     @unique
-  name      String     @unique
+  name      String
+  tenantId  Int?
+  isBuiltin Boolean    @default(false)
+  tenant    Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   users     User[]
   roleMenus RoleMenu[]
 }
@@ -62,12 +67,14 @@ model RoleMenu {
 
 model Package {
   id          Int      @id @default(autoincrement())
+  tenantId    Int
   name        String
   code        String   @unique
   price       Float
   description String?
   isActive    Boolean  @default(true)
   isDefault   Boolean  @default(false)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dispatches  DispatchOrder[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -75,6 +82,7 @@ model Package {
 
 model DispatchOrder {
   id            Int      @id @default(autoincrement())
+  tenantId      Int
   title         String
   region        String
   address       String
@@ -88,6 +96,7 @@ model DispatchOrder {
   status        String   @default("PENDING")
   packageId     Int?
   package       Package? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdById   Int
   createdBy     User     @relation("CreatedOrders", fields: [createdById], references: [id], onDelete: Restrict)
   claimedById   Int?
@@ -100,14 +109,30 @@ model DispatchOrder {
 
 model DispatchOrderRecord {
   id         Int      @id @default(autoincrement())
+  tenantId   Int
   orderId    Int
   order      DispatchOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   operatorId Int
   operator   User     @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   actionType String
   remark     String?
   photoUrl   String?
   operatorLongitude Float?
   operatorLatitude  Float?
   createdAt  DateTime @default(now())
+}
+
+model Tenant {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  roles     Role[]
+  users     User[]
+  packages  Package[]
+  orders    DispatchOrder[]
+  records   DispatchOrderRecord[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

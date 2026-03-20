@@ -17,6 +17,7 @@ export default async function DashboardLayout({
   const currentUser = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
     include: {
+      tenant: { select: { id: true, isActive: true } },
       role: {
         include: {
           roleMenus: {
@@ -30,6 +31,12 @@ export default async function DashboardLayout({
 
   if (!currentUser) {
     redirect("/login");
+  }
+
+  if (currentUser.role.code !== "SUPER_ADMIN") {
+    if (!currentUser.tenantId || !currentUser.tenant?.isActive) {
+      redirect("/login");
+    }
   }
 
   if (currentUser.accessMode === "MOBILE") {

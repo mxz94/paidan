@@ -56,7 +56,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
 
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true },
+    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true, tenantId: true },
   });
 
   if (!me) {
@@ -66,12 +66,15 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   if (me.accessMode !== "MOBILE") {
     redirect("/dashboard");
   }
+  if (!me.tenantId) {
+    redirect("/login");
+  }
 
   const params = await searchParams;
   const tab = ["new", "doing", "done"].includes(String(params.tab)) ? String(params.tab) : "new";
   const selectedRegionRaw = String(params.region ?? "").trim() || "AUTO";
 
-  const baseWhere: any = { isDeleted: false };
+  const baseWhere: any = { isDeleted: false, tenantId: me.tenantId };
 
   if (tab === "new") {
     baseWhere.status = "PENDING";

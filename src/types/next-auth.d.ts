@@ -8,6 +8,8 @@ declare module "next-auth" {
     roleName: string;
     username: string;
     accessMode: string;
+    tenantId: string;
+    tenantCode: string;
   }
 
   interface Session {
@@ -17,6 +19,8 @@ declare module "next-auth" {
       roleName: string;
       username: string;
       accessMode: string;
+      tenantId: string;
+      tenantCode: string;
     };
   }
 }
@@ -28,5 +32,7 @@ declare module "next-auth/jwt" {
     roleName: string;
     username: string;
     accessMode: string;
+    tenantId: string;
+    tenantCode: string;
   }
 }

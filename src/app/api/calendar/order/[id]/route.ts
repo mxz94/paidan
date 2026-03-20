@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
+import { isTenantAdminRole } from "@/lib/tenant";
 import { prisma } from "@/lib/prisma";
 
 function pad(value: number) {
@@ -38,7 +39,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
 
   const order = await prisma.dispatchOrder.findFirst({
-    where: { id: orderId, isDeleted: false },
+    where: {
+      id: orderId,
+      isDeleted: false,
+      ...(session.user.tenantId ? { tenantId: Number(session.user.tenantId) } : {}),
+    },
     select: {
       id: true,
       title: true,
@@ -53,15 +58,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const meId = Number(session.user.id);
-  const isAdmin = session.user.roleCode === "ADMIN";
+  const isAdmin = isTenantAdminRole(session.user.roleCode);
   const canAccess = isAdmin || order.createdById === meId || order.claimedById === meId;
   if (!canAccess) {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
-  const summary = escapeIcsText(`${order.title || `单据#${order.id}`} - 改约提醒`);
+  const summary = escapeIcsText(`${order.title || `鍗曟嵁#${order.id}`} - 鏀圭害鎻愰啋`);
   const description = escapeIcsText(
-    `单据ID：${order.id}\n地址：${order.address || "-"}\n手机号：${order.phone || "-"}`,
+    `鍗曟嵁ID锛?{order.id}\n鍦板潃锛?{order.address || "-"}\n鎵嬫満鍙凤細${order.phone || "-"}`,
   );
   const location = escapeIcsText(order.address || "");
   const uid = `order-${order.id}-${startAt.getTime()}@paidan.local`;
@@ -84,7 +89,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     "BEGIN:VALARM",
     "TRIGGER:-PT15M",
     "ACTION:DISPLAY",
-    "DESCRIPTION:改约提醒",
+    "DESCRIPTION:鏀圭害鎻愰啋",
     "END:VALARM",
     "END:VEVENT",
     "END:VCALENDAR",

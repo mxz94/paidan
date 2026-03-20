@@ -1,6 +1,7 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { UserCreateModal } from "@/components/user-create-modal";
 import { UserImportModal } from "@/components/user-import-modal";
 import { UserLocationMapButton } from "@/components/user-location-map-button";
@@ -48,7 +49,8 @@ export default async function UsersPage({
     redirect("/login");
   }
 
-  if (session.user.roleCode !== "ADMIN") {
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
@@ -58,7 +60,10 @@ export default async function UsersPage({
   }
 
   const params = await searchParams;
-  const roles = await prisma.role.findMany({ orderBy: { id: "asc" } });
+  const roles = await prisma.role.findMany({
+    where: { tenantId: Number(me.tenantId) },
+    orderBy: { id: "asc" },
+  });
   const keyword = String(params.keyword ?? "").trim();
   const roleId = Number(params.roleId ?? 0);
   const accessMode = String(params.accessMode ?? "").trim();
@@ -66,8 +71,9 @@ export default async function UsersPage({
   const page = Math.max(Number(params.page ?? 1), 1);
 
   const where: {
+    tenantId: number;
     AND?: Array<Record<string, unknown>>;
-  } = {};
+  } = { tenantId: Number(me.tenantId) };
   const andConditions: Array<Record<string, unknown>> = [];
   if (keyword) {
     andConditions.push({
@@ -302,3 +308,4 @@ export default async function UsersPage({
     </section>
   );
 }
+

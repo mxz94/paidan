@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
+import { isTenantAdminRole } from "@/lib/tenant";
 
 export async function GET() {
   const session = await getAuthSession();
 
-  if (!session?.user?.id || session.user.roleCode !== "ADMIN") {
+  if (!session?.user?.id || !isTenantAdminRole(session.user.roleCode)) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 

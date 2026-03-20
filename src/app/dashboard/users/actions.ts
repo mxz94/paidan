@@ -7,6 +7,7 @@ import { z } from "zod";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
 const createUserSchema = z.object({
   username: z.string().trim().min(3).max(30),
@@ -45,8 +46,11 @@ function parseAccessMode(value: unknown): "BACKEND" | "MOBILE" | null {
 
 export async function createUser(formData: FormData) {
   const session = await getAuthSession();
-
-  if (!session?.user || session.user.roleCode !== "ADMIN") {
+  if (!session?.user) {
+    redirect("/dashboard");
+  }
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     redirect("/dashboard");
   }
 
@@ -67,7 +71,9 @@ export async function createUser(formData: FormData) {
     redirect("/dashboard/users?err=invalid");
   }
 
-  const role = await prisma.role.findUnique({ where: { id: parsed.data.roleId } });
+  const role = await prisma.role.findFirst({
+    where: { id: parsed.data.roleId, tenantId: Number(me.tenantId) },
+  });
   if (!role) {
     redirect("/dashboard/users?err=role");
   }
@@ -90,6 +96,7 @@ export async function createUser(formData: FormData) {
       passwordHash,
       accessMode: parsed.data.accessMode,
       roleId: parsed.data.roleId,
+      tenantId: Number(me.tenantId),
       longitude: parsed.data.longitude,
       latitude: parsed.data.latitude,
       locationAt:
@@ -104,8 +111,11 @@ export async function createUser(formData: FormData) {
 
 export async function importUsers(formData: FormData) {
   const session = await getAuthSession();
-
-  if (!session?.user || session.user.roleCode !== "ADMIN") {
+  if (!session?.user) {
+    redirect("/dashboard");
+  }
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     redirect("/dashboard");
   }
 
@@ -157,7 +167,10 @@ export async function importUsers(formData: FormData) {
     redirect("/dashboard/users?err=import_limit");
   }
 
-  const roles = await prisma.role.findMany({ select: { id: true, name: true } });
+  const roles = await prisma.role.findMany({
+    where: { tenantId: Number(me.tenantId) },
+    select: { id: true, name: true },
+  });
   const roleByName = new Map(roles.map((r) => [r.name, r.id]));
 
   const seenUsernames = new Set<string>();
@@ -205,22 +218,35 @@ export async function importUsers(formData: FormData) {
 
   await prisma.$transaction(async (tx) => {
     for (const item of parsedRows) {
-      await tx.user.upsert({
+      const existed = await tx.user.findUnique({
         where: { username: item.username },
-        update: {
-          displayName: item.displayName,
-          passwordHash: item.passwordHash,
-          roleId: item.roleId,
-          accessMode: item.accessMode,
-        },
-        create: {
-          username: item.username,
-          displayName: item.displayName,
-          passwordHash: item.passwordHash,
-          roleId: item.roleId,
-          accessMode: item.accessMode,
-        },
+        select: { id: true, tenantId: true },
       });
+      if (existed && existed.tenantId !== Number(me.tenantId)) {
+        redirect("/dashboard/users?err=exists");
+      }
+      if (existed) {
+        await tx.user.update({
+          where: { id: existed.id },
+          data: {
+            displayName: item.displayName,
+            passwordHash: item.passwordHash,
+            roleId: item.roleId,
+            accessMode: item.accessMode,
+          },
+        });
+      } else {
+        await tx.user.create({
+          data: {
+            username: item.username,
+            displayName: item.displayName,
+            passwordHash: item.passwordHash,
+            roleId: item.roleId,
+            accessMode: item.accessMode,
+            tenantId: Number(me.tenantId),
+          },
+        });
+      }
     }
   });
 
@@ -228,3 +254,4 @@ export async function importUsers(formData: FormData) {
   revalidatePath("/dashboard/users");
   redirect(`/dashboard/users?imported=${parsedRows.length}`);
 }
+

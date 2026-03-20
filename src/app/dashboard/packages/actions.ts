@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
 const createPackageSchema = z.object({
   name: z.string().trim().min(2).max(40),
@@ -55,7 +56,11 @@ function parseBoolean(value: unknown, fallback: boolean) {
 export async function createPackage(formData: FormData) {
   const session = await getAuthSession();
 
-  if (!session?.user || session.user.roleCode !== "ADMIN") {
+  if (!session?.user) {
+    redirect("/dashboard");
+  }
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     redirect("/dashboard");
   }
 
@@ -84,13 +89,14 @@ export async function createPackage(formData: FormData) {
   await prisma.$transaction(async (tx) => {
     if (parsed.data.isDefault === "1") {
       await tx.package.updateMany({
-        where: { isDefault: true },
+        where: { isDefault: true, tenantId: Number(me.tenantId) },
         data: { isDefault: false },
       });
     }
 
     await tx.package.create({
       data: {
+        tenantId: Number(me.tenantId),
         name: parsed.data.name,
         code: parsed.data.code,
         price: parsed.data.price,
@@ -108,7 +114,11 @@ export async function createPackage(formData: FormData) {
 export async function importPackages(formData: FormData) {
   const session = await getAuthSession();
 
-  if (!session?.user || session.user.roleCode !== "ADMIN") {
+  if (!session?.user) {
+    redirect("/dashboard");
+  }
+  const me = await getSessionUserWithTenant();
+  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
     redirect("/dashboard");
   }
 
@@ -192,27 +202,41 @@ export async function importPackages(formData: FormData) {
     }
 
     for (const item of parsedRows) {
-      await tx.package.upsert({
+      const existed = await tx.package.findUnique({
         where: { code: item.code },
-        update: {
-          name: item.name,
-          price: item.price,
-          description: item.description,
-          isActive: item.isActive,
-          isDefault: lastDefault ? item.code === lastDefault.code : item.isDefault,
-        },
-        create: {
-          name: item.name,
-          code: item.code,
-          price: item.price,
-          description: item.description,
-          isActive: item.isActive,
-          isDefault: lastDefault ? item.code === lastDefault.code : item.isDefault,
-        },
+        select: { id: true, tenantId: true },
       });
+      if (existed && existed.tenantId !== Number(me.tenantId)) {
+        redirect("/dashboard/packages?err=exists");
+      }
+      if (existed) {
+        await tx.package.update({
+          where: { id: existed.id },
+          data: {
+            name: item.name,
+            price: item.price,
+            description: item.description,
+            isActive: item.isActive,
+            isDefault: lastDefault ? item.code === lastDefault.code : item.isDefault,
+          },
+        });
+      } else {
+        await tx.package.create({
+          data: {
+            tenantId: Number(me.tenantId),
+            name: item.name,
+            code: item.code,
+            price: item.price,
+            description: item.description,
+            isActive: item.isActive,
+            isDefault: lastDefault ? item.code === lastDefault.code : item.isDefault,
+          },
+        });
+      }
     }
   });
 
   revalidatePath("/dashboard/packages");
   redirect(`/dashboard/packages?imported=${parsedRows.length}`);
 }
+

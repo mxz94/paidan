@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { LUOYANG_REGIONS } from "@/lib/regions";
 import { assignDispatchOrder, batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
 import { OrderCreateModal } from "@/components/order-create-modal";
@@ -32,7 +33,7 @@ const customerTypes = ["精准", "客服"];
 const regions = [...LUOYANG_REGIONS];
 
 const errorText: Record<string, string> = {
-  invalid: "提交失败：请检查标题（套餐）和手机号格式。",
+  invalid: "提交失败：请检查标题和手机号格式（无需先创建套餐）。",
   file: "上传失败：单据照片不能超过 10MB。",
   edit_state: "仅未领取单据可编辑。",
   import_file: "请选择要导入的文件。",
@@ -123,7 +124,11 @@ export default async function OrdersPage({
   }
 
   const params = await searchParams;
-  const isAdmin = session.user.roleCode === "ADMIN";
+  const me = await getSessionUserWithTenant();
+  if (!me.tenantId) {
+    redirect("/dashboard");
+  }
+  const isAdmin = isTenantAdminRole(me.role.code);
   const keyword = String(params.keyword ?? "").trim();
   const status = String(params.status ?? "").trim();
 
@@ -131,9 +136,10 @@ export default async function OrdersPage({
   const page = Math.max(Number(params.page ?? 1), 1);
 
   const where: {
+    tenantId: number;
     isDeleted: boolean;
     AND?: Array<Record<string, unknown>>;
-  } = { isDeleted: false };
+  } = { tenantId: me.tenantId, isDeleted: false };
   const andConditions: Array<Record<string, unknown>> = [];
 
   if (keyword) {
@@ -158,7 +164,7 @@ export default async function OrdersPage({
   const currentPage = Math.min(page, totalPages);
 
   const packages = await prisma.package.findMany({
-    where: { isActive: true },
+    where: { tenantId: me.tenantId, isActive: true },
     orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
   });
 
@@ -199,16 +205,16 @@ export default async function OrdersPage({
     },
   });
   const canAssign =
-    currentUser?.role.code === "ADMIN" ||
+    (currentUser?.role.code ? isTenantAdminRole(currentUser.role.code) : false) ||
     currentUser?.role.roleMenus.some((item) => item.menu.key === "perm-order-dispatch-assign") ||
     false;
   const canDelete =
-    currentUser?.role.code === "ADMIN" ||
+    (currentUser?.role.code ? isTenantAdminRole(currentUser.role.code) : false) ||
     currentUser?.role.roleMenus.some((item) => item.menu.key === "perm-order-delete-btn") ||
     false;
   const mobileUsers = canAssign
     ? await prisma.user.findMany({
-        where: { accessMode: "MOBILE" },
+        where: { tenantId: me.tenantId, accessMode: "MOBILE" },
         select: { id: true, displayName: true, username: true },
         orderBy: { createdAt: "desc" },
       })

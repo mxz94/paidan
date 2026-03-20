@@ -48,6 +48,10 @@ export default async function DashboardPage() {
   if (!me) {
     redirect("/login");
   }
+  if (me.role.code !== "SUPER_ADMIN" && !me.tenantId) {
+    redirect("/login");
+  }
+  const tenantWhere = me.role.code === "SUPER_ADMIN" ? {} : { tenantId: me.tenantId as number };
 
   const now = new Date();
   const dayRange = getPeriodRange("day", now);
@@ -55,10 +59,10 @@ export default async function DashboardPage() {
   const monthRange = getPeriodRange("month", now);
 
   const [totalOrders, statusGroups, periodStats, regionGroups, topClaimersRaw] = await Promise.all([
-    prisma.dispatchOrder.count({ where: { isDeleted: false } }),
+    prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere } }),
     prisma.dispatchOrder.groupBy({
       by: ["status"],
-      where: { isDeleted: false },
+      where: { isDeleted: false, ...tenantWhere },
       _count: { _all: true },
     }),
     Promise.all(
@@ -69,13 +73,13 @@ export default async function DashboardPage() {
       ].map(async (item) => {
         const [created, claimed, closed] = await Promise.all([
           prisma.dispatchOrder.count({
-            where: { isDeleted: false, createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { isDeleted: false, ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
           prisma.dispatchOrderRecord.count({
-            where: { actionType: "CLAIM", createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { actionType: "CLAIM", ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
           prisma.dispatchOrderRecord.count({
-            where: { actionType: { in: ["FINISH", "END"] }, createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { actionType: { in: ["FINISH", "END"] }, ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
         ]);
         const rate = created > 0 ? Math.round((closed / created) * 100) : 0;
@@ -84,12 +88,12 @@ export default async function DashboardPage() {
     ),
     prisma.dispatchOrder.groupBy({
       by: ["region"],
-      where: { isDeleted: false, region: { not: "" } },
+      where: { isDeleted: false, ...tenantWhere, region: { not: "" } },
       _count: { _all: true },
     }),
     prisma.dispatchOrderRecord.groupBy({
       by: ["operatorId"],
-      where: { actionType: "CLAIM" },
+      where: { actionType: "CLAIM", ...tenantWhere },
       _count: { _all: true },
     }),
   ]);
@@ -113,8 +117,8 @@ export default async function DashboardPage() {
       const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
       const end = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
       const [created, claimed] = await Promise.all([
-        prisma.dispatchOrder.count({ where: { isDeleted: false, createdAt: { gte: start, lte: end } } }),
-        prisma.dispatchOrderRecord.count({ where: { actionType: "CLAIM", createdAt: { gte: start, lte: end } } }),
+        prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere, createdAt: { gte: start, lte: end } } }),
+        prisma.dispatchOrderRecord.count({ where: { actionType: "CLAIM", ...tenantWhere, createdAt: { gte: start, lte: end } } }),
       ]);
       return { label: fmtDayLabel(date), created, claimed };
     }),
