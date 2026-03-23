@@ -4,7 +4,7 @@ import { OrderEditForm } from "@/components/order-edit-form";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasTenantDataScope } from "@/lib/tenant";
 import { updateDispatchOrder } from "../../actions";
 
 type Params = Promise<{ id: string }>;
@@ -26,8 +26,9 @@ export default async function EditOrderPage({ params }: { params: Params }) {
     notFound();
   }
 
+  const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const where =
-    isTenantAdminRole(session.user.roleCode)
+    canAll
       ? { id: orderId, isDeleted: false, ...(me.tenantId ? { tenantId: me.tenantId } : {}) }
       : { id: orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false };
 

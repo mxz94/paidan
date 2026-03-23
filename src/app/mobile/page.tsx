@@ -1,7 +1,7 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
-import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
+import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
@@ -34,6 +34,7 @@ const opMessage: Record<string, { text: string; cls: string }> = {
   "append-empty": { text: "请填写备注或上传照片", cls: "bg-rose-50 text-rose-700" },
   finish1: { text: "单据已完结", cls: "bg-emerald-50 text-emerald-700" },
   finish0: { text: "完结失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
+  "finish-handle-phone": { text: "完结失败：请填写11位客户办理号码", cls: "bg-rose-50 text-rose-700" },
   "finish-distance": { text: "完结失败：精准客资需在客户位置 2km 内", cls: "bg-rose-50 text-rose-700" },
   end1: { text: "单据已结束", cls: "bg-emerald-50 text-emerald-700" },
   end0: { text: "结束失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
@@ -41,14 +42,16 @@ const opMessage: Record<string, { text: string; cls: string }> = {
   reschedule1: { text: "改约成功", cls: "bg-emerald-50 text-emerald-700" },
   reschedule0: { text: "改约失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
   "reschedule-empty": { text: "请先选择改约时间", cls: "bg-rose-50 text-rose-700" },
-  return1: { text: "单据已退回待领取", cls: "bg-emerald-50 text-emerald-700" },
-  return0: { text: "退单失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
+  convert1: { text: "已转为精准单据并回到未领取", cls: "bg-emerald-50 text-emerald-700" },
+  convert0: { text: "转精准失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
+  "convert-date": { text: "转精准失败：约定时间格式不正确", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-precise": { text: "今日精准客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-service": { text: "今日客服客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
   file: { text: "上传失败：图片不能超过 10MB", cls: "bg-rose-50 text-rose-700" },
 };
 
 export default async function MobilePage({ searchParams }: { searchParams: SearchParams }) {
+  await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
 
@@ -99,14 +102,23 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
       region: true,
       customerType: true,
       phone: true,
+      handledPhone: true,
       status: true,
       longitude: true,
       latitude: true,
+      appointmentAt: true,
       createdAt: true,
       updatedAt: true,
       claimedAt: true,
+      convertedToPreciseAt: true,
       createdById: true,
       createdBy: {
+        select: {
+          displayName: true,
+          username: true,
+        },
+      },
+      convertedToPreciseBy: {
         select: {
           displayName: true,
           username: true,
@@ -224,11 +236,17 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
             region: item.region,
             customerType: item.customerType || "",
             phone: item.phone || "",
+            handledPhone: item.handledPhone || "",
             status: item.status,
             longitude: item.longitude ?? null,
             latitude: item.latitude ?? null,
+            appointmentAt: item.appointmentAt ? item.appointmentAt.toISOString() : null,
             createdAt: item.createdAt.toISOString(),
             claimedAt: item.claimedAt ? item.claimedAt.toISOString() : null,
+            convertedToPreciseAt: item.convertedToPreciseAt ? item.convertedToPreciseAt.toISOString() : null,
+            convertedToPreciseByName: item.convertedToPreciseBy
+              ? item.convertedToPreciseBy.displayName || item.convertedToPreciseBy.username
+              : "",
             createdByName: item.createdBy.displayName || item.createdBy.username || `用户#${item.createdById}`,
             distanceKm: item.distanceKm,
             records: item.records.map((record) => ({

@@ -50,3 +50,5 @@ paidan-deploy.tgz
 public/uploads/
 prisma/dev.db
 prisma/dev.db-journal
+.dev.err.log
+.dev.log

@@ -74,6 +74,7 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                 <span className="text-sm font-medium text-slate-700">区域</span>
                 <select
                   name="region"
+                  required
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 >
                   <option value="">请选择区域</option>
@@ -92,6 +93,7 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                     name="address"
                     value={address}
                     onChange={(event) => setAddress(event.currentTarget.value)}
+                    required
                     placeholder="请输入地址，可点击右侧地图图标查询"
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   />
@@ -126,6 +128,7 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                 <span className="text-sm font-medium text-slate-700">客户类型</span>
                 <select
                   name="customerType"
+                  required
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 >
                   <option value="">请选择客户类型</option>
@@ -148,12 +151,22 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                 />
               </label>
 
+              <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
+                <span className="text-sm font-medium text-slate-700">约定时间</span>
+                <input
+                  name="appointmentAt"
+                  type="datetime-local"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+              </label>
+
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-start">
                 <span className="pt-2 text-sm font-medium text-slate-700">单据照片</span>
                 <div>
                   <input
                     name="photo"
                     type="file"
+                    required
                     accept="image/*"
                     className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white"
                   />

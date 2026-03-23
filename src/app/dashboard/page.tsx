@@ -1,7 +1,8 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasTenantDataScope } from "@/lib/tenant";
 
 type PeriodType = "day" | "week" | "month";
 
@@ -51,7 +52,19 @@ export default async function DashboardPage() {
   if (me.role.code !== "SUPER_ADMIN" && !me.tenantId) {
     redirect("/login");
   }
-  const tenantWhere = me.role.code === "SUPER_ADMIN" ? {} : { tenantId: me.tenantId as number };
+  const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
+  const orderWhere =
+    me.role.code === "SUPER_ADMIN"
+      ? { isDeleted: false }
+      : canViewTenantAll
+        ? { isDeleted: false, tenantId: me.tenantId as number }
+        : { isDeleted: false, tenantId: me.tenantId as number, createdById: me.id };
+  const recordWhereBase =
+    me.role.code === "SUPER_ADMIN"
+      ? {}
+      : canViewTenantAll
+        ? { tenantId: me.tenantId as number }
+        : { tenantId: me.tenantId as number, order: { createdById: me.id } };
 
   const now = new Date();
   const dayRange = getPeriodRange("day", now);
@@ -59,27 +72,27 @@ export default async function DashboardPage() {
   const monthRange = getPeriodRange("month", now);
 
   const [totalOrders, statusGroups, periodStats, regionGroups, topClaimersRaw] = await Promise.all([
-    prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere } }),
+    prisma.dispatchOrder.count({ where: orderWhere }),
     prisma.dispatchOrder.groupBy({
       by: ["status"],
-      where: { isDeleted: false, ...tenantWhere },
+      where: orderWhere,
       _count: { _all: true },
     }),
     Promise.all(
       [
-        { key: "day", label: "每日", range: dayRange },
-        { key: "week", label: "每周", range: weekRange },
-        { key: "month", label: "每月", range: monthRange },
+        { key: "day", label: "ÿ��", range: dayRange },
+        { key: "week", label: "ÿ��", range: weekRange },
+        { key: "month", label: "ÿ��", range: monthRange },
       ].map(async (item) => {
         const [created, claimed, closed] = await Promise.all([
           prisma.dispatchOrder.count({
-            where: { isDeleted: false, ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { ...orderWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
           prisma.dispatchOrderRecord.count({
-            where: { actionType: "CLAIM", ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { actionType: "CLAIM", ...recordWhereBase, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
           prisma.dispatchOrderRecord.count({
-            where: { actionType: { in: ["FINISH", "END"] }, ...tenantWhere, createdAt: { gte: item.range.start, lte: item.range.end } },
+            where: { actionType: { in: ["FINISH", "END"] }, ...recordWhereBase, createdAt: { gte: item.range.start, lte: item.range.end } },
           }),
         ]);
         const rate = created > 0 ? Math.round((closed / created) * 100) : 0;
@@ -88,12 +101,12 @@ export default async function DashboardPage() {
     ),
     prisma.dispatchOrder.groupBy({
       by: ["region"],
-      where: { isDeleted: false, ...tenantWhere, region: { not: "" } },
+      where: { ...orderWhere, region: { not: "" } },
       _count: { _all: true },
     }),
     prisma.dispatchOrderRecord.groupBy({
       by: ["operatorId"],
-      where: { actionType: "CLAIM", ...tenantWhere },
+      where: { actionType: "CLAIM", ...recordWhereBase },
       _count: { _all: true },
     }),
   ]);
@@ -117,8 +130,8 @@ export default async function DashboardPage() {
       const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
       const end = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
       const [created, claimed] = await Promise.all([
-        prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere, createdAt: { gte: start, lte: end } } }),
-        prisma.dispatchOrderRecord.count({ where: { actionType: "CLAIM", ...tenantWhere, createdAt: { gte: start, lte: end } } }),
+        prisma.dispatchOrder.count({ where: { ...orderWhere, createdAt: { gte: start, lte: end } } }),
+        prisma.dispatchOrderRecord.count({ where: { actionType: "CLAIM", ...recordWhereBase, createdAt: { gte: start, lte: end } } }),
       ]);
       return { label: fmtDayLabel(date), created, claimed };
     }),
@@ -137,7 +150,7 @@ export default async function DashboardPage() {
   const claimerMap = new Map(claimerUsers.map((u) => [u.id, u]));
   const rankRows = topClaimers.map((x) => ({
     id: x.operatorId,
-    name: claimerMap.get(x.operatorId)?.displayName || claimerMap.get(x.operatorId)?.username || `用户#${x.operatorId}`,
+    name: claimerMap.get(x.operatorId)?.displayName || claimerMap.get(x.operatorId)?.username || `�û�#${x.operatorId}`,
     count: x._count._all,
   }));
 
@@ -150,21 +163,21 @@ export default async function DashboardPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs tracking-[0.28em] text-cyan-200/90">DISPATCH DATA SCREEN</p>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-wide md:text-4xl">派单管理系统数据大屏</h1>
-            <p className="mt-2 text-sm text-slate-300">{new Date().toLocaleString("zh-CN", { hour12: false })} · {me.displayName}（{me.role.name}）</p>
+            <h1 className="mt-2 text-3xl font-extrabold tracking-wide md:text-4xl">�ɵ�����ϵͳ���ݴ���</h1>
+            <p className="mt-2 text-sm text-slate-300">{new Date().toLocaleString("zh-CN", { hour12: false })} �� {me.displayName}��{me.role.name}��</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/dashboard/orders" className="rounded-xl border border-cyan-300/40 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-400/20">单据中心</Link>
-            <Link href="/mobile" className="rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">客服端</Link>
+            <Link href="/dashboard/orders" className="rounded-xl border border-cyan-300/40 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-400/20">��������</Link>
+            <Link href="/mobile" className="rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">�ͷ���</Link>
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: "单据总量", value: totalOrders, tone: "text-cyan-300" },
-            { label: "待领取", value: pendingCount, tone: "text-amber-300" },
-            { label: "进行中", value: claimedCount, tone: "text-blue-300" },
-            { label: "完结+结束", value: doneCount + endedCount, tone: "text-emerald-300" },
+            { label: "��������", value: totalOrders, tone: "text-cyan-300" },
+            { label: "����ȡ", value: pendingCount, tone: "text-amber-300" },
+            { label: "������", value: claimedCount, tone: "text-blue-300" },
+            { label: "���+����", value: doneCount + endedCount, tone: "text-emerald-300" },
           ].map((item) => (
             <article key={item.label} className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur-sm">
               <p className="text-xs text-slate-300">{item.label}</p>
@@ -177,12 +190,12 @@ export default async function DashboardPage() {
       <div className="grid gap-5 lg:grid-cols-3">
         {periodStats.map((p) => (
           <article key={p.key} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-900">{p.label}统计</h2>
+            <h2 className="text-lg font-bold text-slate-900">{p.label}ͳ��</h2>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">新增</p><p className="text-xl font-bold text-blue-700">{p.created}</p></div>
-              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">领取</p><p className="text-xl font-bold text-cyan-700">{p.claimed}</p></div>
-              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">完结/结束</p><p className="text-xl font-bold text-emerald-700">{p.closed}</p></div>
-              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">完成率</p><p className="text-xl font-bold text-fuchsia-700">{p.rate}%</p></div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">����</p><p className="text-xl font-bold text-blue-700">{p.created}</p></div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">��ȡ</p><p className="text-xl font-bold text-cyan-700">{p.claimed}</p></div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">���/����</p><p className="text-xl font-bold text-emerald-700">{p.closed}</p></div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">�����</p><p className="text-xl font-bold text-fuchsia-700">{p.rate}%</p></div>
             </div>
           </article>
         ))}
@@ -190,19 +203,19 @@ export default async function DashboardPage() {
 
       <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">近7天新增/领取趋势</h2>
+          <h2 className="text-lg font-bold text-slate-900">��7������/��ȡ����</h2>
           <div className="mt-4 space-y-3">
             {trendRows.map((row) => (
               <div key={row.label} className="grid grid-cols-[52px_1fr] items-center gap-3">
                 <span className="text-xs text-slate-500">{row.label}</span>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-10 text-[11px] text-slate-500">新增</span>
+                    <span className="w-10 text-[11px] text-slate-500">����</span>
                     <div className="h-2 w-full rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.max(6, Math.round((row.created / trendPeak) * 100))}%` }} /></div>
                     <span className="w-6 text-right text-xs text-slate-700">{row.created}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-10 text-[11px] text-slate-500">领取</span>
+                    <span className="w-10 text-[11px] text-slate-500">��ȡ</span>
                     <div className="h-2 w-full rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.max(6, Math.round((row.claimed / trendPeak) * 100))}%` }} /></div>
                     <span className="w-6 text-right text-xs text-slate-700">{row.claimed}</span>
                   </div>
@@ -213,20 +226,20 @@ export default async function DashboardPage() {
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">领取排行榜</h2>
+          <h2 className="text-lg font-bold text-slate-900">��ȡ���а�</h2>
           <div className="mt-4 space-y-2">
             {rankRows.length > 0 ? rankRows.map((r, i) => (
               <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
                 <span className="text-slate-700">{i + 1}. {r.name}</span>
-                <span className="font-bold text-blue-700">{r.count} 次</span>
+                <span className="font-bold text-blue-700">{r.count} ��</span>
               </div>
-            )) : <p className="text-sm text-slate-500">暂无领取数据</p>}
+            )) : <p className="text-sm text-slate-500">������ȡ����</p>}
           </div>
         </article>
       </div>
 
       <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-900">区域任务热度 Top8</h2>
+        <h2 className="text-lg font-bold text-slate-900">���������ȶ� Top8</h2>
         <div className="mt-4 grid gap-2 md:grid-cols-2">
           {topRegions.length > 0 ? topRegions.map((item) => {
             const pct = Math.round((item._count._all / regionPeak) * 100);
@@ -239,9 +252,13 @@ export default async function DashboardPage() {
                 <div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.max(8, pct)}%` }} /></div>
               </div>
             );
-          }) : <p className="text-sm text-slate-500">暂无区域数据</p>}
+          }) : <p className="text-sm text-slate-500">������������</p>}
         </div>
       </article>
     </section>
   );
 }
+
+
+
+

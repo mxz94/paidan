@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 
@@ -7,12 +7,18 @@ type RoleOption = {
   name: string;
 };
 
+type StoreOption = {
+  id: number;
+  name: string;
+};
+
 type Props = {
   roles: RoleOption[];
+  stores: StoreOption[];
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function UserCreateModal({ roles, action }: Props) {
+export function UserCreateModal({ roles, stores, action }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -92,6 +98,23 @@ export function UserCreateModal({ roles, action }: Props) {
                 </label>
 
                 <label className="block">
+                  <span className="mb-1 block text-sm text-slate-600">门店</span>
+                  <select
+                    name="storeId"
+                    required
+                    defaultValue={stores[0]?.id ?? ""}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  >
+                    {stores.length === 0 ? <option value="">暂无门店，请先去门店管理新增</option> : null}
+                    {stores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
                   <span className="mb-1 block text-sm text-slate-600">登录端类型</span>
                   <select
                     name="accessMode"
@@ -109,7 +132,8 @@ export function UserCreateModal({ roles, action }: Props) {
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="submit"
-                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  disabled={stores.length === 0}
+                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
                   创建用户
                 </button>

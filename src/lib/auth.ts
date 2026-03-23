@@ -49,6 +49,7 @@ export const authOptions: NextAuthOptions = {
           username: user.username,
           roleCode: user.role.code,
           roleName: user.role.name,
+          roleDataScope: user.role.dataScope ?? "TENANT",
           accessMode: user.accessMode,
           tenantId: user.tenantId ? String(user.tenantId) : "",
           tenantCode: user.tenant?.code ?? "",
@@ -62,6 +63,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.roleCode = user.roleCode;
         token.roleName = user.roleName;
+        token.roleDataScope = user.roleDataScope;
         token.username = user.username;
         token.accessMode = user.accessMode;
         token.tenantId = user.tenantId;
@@ -74,6 +76,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = String(token.id ?? "");
         session.user.roleCode = String(token.roleCode ?? "");
         session.user.roleName = String(token.roleName ?? "");
+        session.user.roleDataScope = String(token.roleDataScope ?? "TENANT");
         session.user.username = String(token.username ?? "");
         session.user.accessMode = String(token.accessMode ?? "BACKEND");
         session.user.tenantId = String(token.tenantId ?? "");

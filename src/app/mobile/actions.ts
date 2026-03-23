@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
-import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
+import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
@@ -11,6 +11,8 @@ import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 const DEFAULT_PRECISE_DAILY_LIMIT = 3;
 const DEFAULT_SERVICE_DAILY_LIMIT = 20;
 const PRECISE_FINISH_RADIUS_KM = 2;
+const GEOCODE_MIN_INTERVAL_MS = 220;
+const GEOCODE_MAX_RETRY = 2;
 
 async function getOperatorTenantId(operatorId: number) {
   const user = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
@@ -53,6 +55,92 @@ function buildMobileQuery(formData: FormData, nextTab: "new" | "doing" | "done",
     });
   }
   return `/mobile?${search.toString()}`;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createGeocodeThrottle(minIntervalMs: number) {
+  let lastAt = 0;
+  return async () => {
+    const now = Date.now();
+    const wait = minIntervalMs - (now - lastAt);
+    if (wait > 0) await sleep(wait);
+    lastAt = Date.now();
+  };
+}
+
+function normalizeLooseAddress(text: string) {
+  return text.replace(/\s+/g, "").replace(/[，,。；;、]/g, "");
+}
+
+function buildAddressCandidates(address: string) {
+  const raw = String(address || "").trim();
+  const compact = normalizeLooseAddress(raw);
+  const set = new Set<string>();
+
+  if (raw) set.add(raw);
+  if (compact) set.add(compact);
+  if (compact && !compact.startsWith("洛阳市")) set.add(`洛阳市${compact}`);
+  if (compact && !compact.startsWith("河南省")) set.add(`河南省洛阳市${compact}`);
+
+  if (compact.includes("城关") && !compact.includes("城关镇")) {
+    const withTown = compact.replace("城关", "城关镇");
+    set.add(withTown);
+    set.add(`洛阳市${withTown}`);
+    set.add(`河南省洛阳市${withTown}`);
+  }
+
+  return Array.from(set).filter(Boolean);
+}
+
+function resolveAmapWebKey() {
+  return (
+    process.env.AMAP_WEB_SERVICE_KEY ||
+    process.env.AMAP_WEB_KEY ||
+    process.env.NEXT_PUBLIC_AMAP_KEY ||
+    process.env.VUE_APP_AMAP_KEY ||
+    ""
+  );
+}
+
+async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
+  const key = resolveAmapWebKey();
+  const sig = process.env.AMAP_WEB_SERVICE_SIG || process.env.AMAP_WEB_SIG || "";
+  if (!key) return { longitude: null as number | null, latitude: null as number | null };
+
+  try {
+    if (throttle) await throttle();
+    const search = new URLSearchParams({ key, address, city: "洛阳" });
+    if (sig) search.set("sig", sig);
+    const resp = await fetch(`https://restapi.amap.com/v3/geocode/geo?${search.toString()}`, { cache: "no-store" });
+    if (!resp.ok) return { longitude: null as number | null, latitude: null as number | null };
+    const json = (await resp.json()) as { status?: string; geocodes?: Array<{ location?: string }> };
+    if (json.status !== "1") return { longitude: null as number | null, latitude: null as number | null };
+    const location = json.geocodes?.[0]?.location ?? "";
+    const [lngText, latText] = location.split(",");
+    const longitude = Number(lngText);
+    const latitude = Number(latText);
+    if (Number.isNaN(longitude) || Number.isNaN(latitude)) {
+      return { longitude: null as number | null, latitude: null as number | null };
+    }
+    return { longitude, latitude };
+  } catch {
+    return { longitude: null as number | null, latitude: null as number | null };
+  }
+}
+
+async function geocodeAddressWithRetry(address: string, throttle: () => Promise<void>) {
+  const candidates = buildAddressCandidates(address);
+  for (const candidate of candidates) {
+    for (let i = 0; i <= GEOCODE_MAX_RETRY; i += 1) {
+      const result = await geocodeAddress(candidate, throttle);
+      if (result.longitude != null && result.latitude != null) return result;
+      if (i < GEOCODE_MAX_RETRY) await sleep(180 * (i + 1));
+    }
+  }
+  return { longitude: null as number | null, latitude: null as number | null };
 }
 
 export async function claimDispatchOrder(formData: FormData) {
@@ -201,12 +289,18 @@ export async function appendDispatchOrderRecord(formData: FormData) {
 }
 
 export async function finishDispatchOrder(formData: FormData) {
+  await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+  const handledPhone = String(formData.get("handledPhone") ?? "").trim();
+  if (!/^1\d{10}$/.test(handledPhone)) {
+    redirect(buildMobileQuery(formData, "doing", { op: "finish-handle-phone" }));
+  }
+  const convertToPrecise = String(formData.get("convertToPrecise") ?? "") === "1";
 
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
@@ -229,9 +323,17 @@ export async function finishDispatchOrder(formData: FormData) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const nextCustomerType = convertToPrecise ? "精准" : order.customerType;
     const updated = await tx.dispatchOrder.updateMany({
       where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-      data: { status: "DONE" },
+      data: {
+        status: "DONE",
+        handledPhone,
+        customerType: nextCustomerType,
+        convertedToPreciseById: convertToPrecise ? operatorId : null,
+        convertedToPreciseAt: convertToPrecise ? now : null,
+      },
     });
 
     if (updated.count > 0) {
@@ -241,7 +343,7 @@ export async function finishDispatchOrder(formData: FormData) {
           operatorId,
           tenantId,
           actionType: "FINISH",
-          remark: "单据完结",
+          remark: `单据完结；办理号码：${handledPhone}${convertToPrecise ? "；转精准" : ""}`,
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },
@@ -352,39 +454,81 @@ export async function rescheduleDispatchOrder(formData: FormData) {
   redirect(buildMobileQuery(formData, "doing", { op: "reschedule1" }));
 }
 
-export async function returnDispatchOrder(formData: FormData) {
+export async function convertDispatchOrderToPrecise(formData: FormData) {
+  await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
+  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
 
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
-  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
+  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const remark = String(formData.get("remark") ?? "").trim();
+  const region = String(formData.get("regionText") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+  const appointmentAtText = String(formData.get("appointmentAt") ?? "").trim();
+  const appointmentAt = appointmentAtText ? new Date(appointmentAtText) : null;
+  if (appointmentAt && Number.isNaN(appointmentAt.getTime())) {
+    redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
+  }
+
+  const geocodeThrottle = createGeocodeThrottle(GEOCODE_MIN_INTERVAL_MS);
+  let longitude: number | null = null;
+  let latitude: number | null = null;
+  if (address) {
+    const geo = await geocodeAddressWithRetry(address, geocodeThrottle);
+    longitude = geo.longitude;
+    latitude = geo.latitude;
+  }
 
   const result = await prisma.$transaction(async (tx) => {
+    const current = await tx.dispatchOrder.findFirst({
+      where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
+      select: { id: true, region: true, address: true, appointmentAt: true, longitude: true, latitude: true },
+    });
+    if (!current) return 0;
+
+    const finalRegion = region || current.region || "";
+    const finalAddress = address || current.address || "";
+    const finalAppointmentAt = appointmentAt ?? current.appointmentAt ?? null;
+
     const updated = await tx.dispatchOrder.updateMany({
       where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
       data: {
+        customerType: "精准",
         status: "PENDING",
         claimedById: null,
         claimedAt: null,
+        convertedToPreciseById: operatorId,
+        convertedToPreciseAt: new Date(),
+        region: finalRegion,
+        address: finalAddress,
+        appointmentAt: finalAppointmentAt,
+        longitude: longitude ?? current.longitude ?? null,
+        latitude: latitude ?? current.latitude ?? null,
       },
     });
 
     if (updated.count > 0) {
+      const parts = [
+        "转精准，状态重置为未领取",
+        finalRegion ? `区域：${finalRegion}` : "",
+        finalAddress ? `地址：${finalAddress}` : "",
+        finalAppointmentAt ? `约定时间：${new Date(finalAppointmentAt).toLocaleString("zh-CN")}` : "",
+        remark ? `备注：${remark}` : "",
+      ].filter(Boolean);
       await tx.dispatchOrderRecord.create({
         data: {
           orderId,
           operatorId,
           tenantId,
-          actionType: "RETURN",
-          remark: remark || "退单回待领取",
+          actionType: "CONVERT_PRECISE",
+          remark: parts.join("；"),
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },
@@ -394,6 +538,6 @@ export async function returnDispatchOrder(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "return1" }));
-  redirect(buildMobileQuery(formData, "doing", { op: "return0" }));
+  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "convert1" }));
+  redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
 }

@@ -8,6 +8,7 @@ import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
 const createRoleSchema = z.object({
   name: z.string().trim().min(2).max(30),
+  dataScope: z.enum(["TENANT", "OWN"]),
 });
 
 export async function createRole(formData: FormData) {
@@ -18,6 +19,7 @@ export async function createRole(formData: FormData) {
 
   const parsed = createRoleSchema.safeParse({
     name: formData.get("name"),
+    dataScope: formData.get("dataScope"),
   });
 
   if (!parsed.success) {
@@ -53,6 +55,7 @@ export async function createRole(formData: FormData) {
       name: parsed.data.name,
       tenantId: Number(me.tenantId),
       isBuiltin: false,
+      dataScope: parsed.data.dataScope,
     },
   });
 

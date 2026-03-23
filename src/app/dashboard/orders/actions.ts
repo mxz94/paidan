@@ -7,13 +7,16 @@ import { z } from "zod";
 import * as XLSX from "xlsx";
 import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
-import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
+import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
-import { isTenantAdminRole } from "@/lib/tenant";
+import { hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
 
 const createDispatchSchema = z.object({
   title: z.string().trim().min(1).max(100),
+  region: z.string().trim().min(1).max(50),
+  address: z.string().trim().min(1).max(200),
+  customerType: z.string().trim().min(1).max(20),
   phone: z
     .string()
     .trim()
@@ -107,6 +110,14 @@ function parseImportCellNumber(value: unknown) {
   const num = Number(text);
   if (Number.isNaN(num)) return Number.NaN;
   return num;
+}
+
+function parseOptionalDateTime(value: FormDataEntryValue | null) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
 }
 
 function sleep(ms: number) {
@@ -366,6 +377,7 @@ async function findOrCreateInviterUserInTx(
 }
 
 export async function createDispatchOrder(formData: FormData) {
+  await ensureDispatchOrderBusinessColumns();
   const session = await getAuthSession();
 
   if (!session?.user?.id) {
@@ -373,17 +385,21 @@ export async function createDispatchOrder(formData: FormData) {
   }
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { tenantId: true },
+    select: { tenantId: true, role: { select: { code: true, dataScope: true } } },
   });
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=invalid");
   }
+  const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
 
   const longitude = parseNullableNumber(formData.get("longitude"));
   const latitude = parseNullableNumber(formData.get("latitude"));
 
   const parsed = createDispatchSchema.safeParse({
     title: formData.get("title"),
+    region: formData.get("region"),
+    address: formData.get("address"),
+    customerType: formData.get("customerType"),
     phone: formData.get("phone"),
   });
 
@@ -392,16 +408,20 @@ export async function createDispatchOrder(formData: FormData) {
   }
 
   const photo = formData.get("photo");
-  const photoUrl = photo instanceof File ? await saveCompressedImage(photo, "orders") : undefined;
+  if (!(photo instanceof File) || photo.size <= 0) {
+    redirect("/dashboard/orders?err=invalid");
+  }
+  const photoUrl = await saveCompressedImage(photo, "orders");
 
   if (photoUrl === "__TOO_LARGE__") {
     redirect("/dashboard/orders?err=file");
   }
 
-  const region = String(formData.get("region") ?? "").trim();
-  const address = String(formData.get("address") ?? "").trim();
-  const customerType = String(formData.get("customerType") ?? "").trim();
+  const region = parsed.data.region;
+  const address = parsed.data.address;
+  const customerType = parsed.data.customerType;
   const remark = String(formData.get("remark") ?? "").trim();
+  const appointmentAt = parseOptionalDateTime(formData.get("appointmentAt"));
   const enteredTitle = parsed.data.title.trim();
   const matchedPackage = await prisma.package.findFirst({
     where: {
@@ -423,6 +443,7 @@ export async function createDispatchOrder(formData: FormData) {
       phone: parsed.data.phone,
       customerType,
       remark: remark || null,
+      appointmentAt,
       photoUrl,
       tenantId: Number(me.tenantId),
       createdById: Number(session.user.id),
@@ -770,9 +791,15 @@ const updateDispatchSchema = z.object({
 });
 
 async function canAccessOrder(orderId: number, userId: number, roleCode: string) {
-  const me = await prisma.user.findUnique({ where: { id: userId }, select: { tenantId: true } });
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { tenantId: true, role: { select: { code: true, dataScope: true } } },
+  });
   if (!me?.tenantId) return null;
-  const where = { id: orderId, isDeleted: false, tenantId: Number(me.tenantId) };
+  const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
+  const where = canAll
+    ? { id: orderId, isDeleted: false, tenantId: Number(me.tenantId) }
+    : { id: orderId, isDeleted: false, tenantId: Number(me.tenantId), createdById: userId };
   return prisma.dispatchOrder.findFirst({ where, select: { id: true } });
 }
 
@@ -808,6 +835,7 @@ async function hasMenuPermission(userId: number, menuKey: string) {
 }
 
 export async function updateDispatchOrder(formData: FormData) {
+  await ensureDispatchOrderBusinessColumns();
   const session = await getAuthSession();
 
   if (!session?.user?.id) {
@@ -815,11 +843,12 @@ export async function updateDispatchOrder(formData: FormData) {
   }
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { tenantId: true },
+    select: { tenantId: true, role: { select: { code: true, dataScope: true } } },
   });
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=invalid");
   }
+  const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
 
   const longitude = parseNullableNumber(formData.get("longitude"));
   const latitude = parseNullableNumber(formData.get("latitude"));
@@ -837,7 +866,7 @@ export async function updateDispatchOrder(formData: FormData) {
 
   const order = await prisma.dispatchOrder.findFirst({
     where:
-      isTenantAdminRole(session.user.roleCode)
+      canAll
         ? { id: parsed.data.orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
         : { id: parsed.data.orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false, status: "PENDING" },
     select: { id: true },
@@ -1028,13 +1057,18 @@ export async function deleteDispatchOrder(formData: FormData) {
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=delete_state");
   }
+  const meRole = await prisma.user.findUnique({
+    where: { id: operatorId },
+    select: { role: { select: { code: true, dataScope: true } } },
+  });
+  const canAll = meRole ? hasTenantDataScope(meRole.role.code, meRole.role.dataScope) : false;
   const hasPerm = await hasMenuPermission(operatorId, "perm-order-delete-btn");
   if (!hasPerm) {
     redirect("/dashboard/orders?err=delete_perm");
   }
 
   const where =
-      isTenantAdminRole(session.user.roleCode)
+      canAll
       ? { id: orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
       : { id: orderId, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" };
   const order = await prisma.dispatchOrder.findFirst({ where, select: { id: true } });
@@ -1086,9 +1120,14 @@ export async function deleteDispatchOrdersBatch(formData: FormData) {
     redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=delete_state`);
   }
 
+  const meRole = await prisma.user.findUnique({
+    where: { id: operatorId },
+    select: { role: { select: { code: true, dataScope: true } } },
+  });
+  const canAll = meRole ? hasTenantDataScope(meRole.role.code, meRole.role.dataScope) : false;
   const uniqueIds = Array.from(new Set(orderIds));
   const where =
-    isTenantAdminRole(session.user.roleCode)
+    canAll
       ? { id: { in: uniqueIds }, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
       : { id: { in: uniqueIds }, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" as const };
 
@@ -1135,6 +1174,11 @@ export async function batchOperateDispatchOrders(formData: FormData) {
   if (!me?.tenantId) {
     redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=assign_invalid`);
   }
+  const meRole = await prisma.user.findUnique({
+    where: { id: operatorId },
+    select: { role: { select: { code: true, dataScope: true } } },
+  });
+  const canAll = meRole ? hasTenantDataScope(meRole.role.code, meRole.role.dataScope) : false;
   const intent = String(formData.get("intent") ?? "").trim();
 
   if (intent === "assign") {
@@ -1162,6 +1206,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
         where: {
           id: { in: uniqueIds },
           tenantId: Number(me.tenantId),
+          ...(canAll ? {} : { createdById: operatorId }),
           isDeleted: false,
           status: "PENDING",
           claimedById: null,
@@ -1212,7 +1257,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     }
 
     const where =
-      isTenantAdminRole(session.user.roleCode)
+      canAll
         ? { id: { in: uniqueIds }, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
         : { id: { in: uniqueIds }, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" as const };
 

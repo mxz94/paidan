@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
+import { ensureUserStoreColumn } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
@@ -15,6 +16,7 @@ const createUserSchema = z.object({
   password: z.string().min(6).max(50),
   accessMode: z.enum(["BACKEND", "MOBILE"]),
   roleId: z.coerce.number().int().positive(),
+  storeId: z.coerce.number().int().positive(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
 });
@@ -45,6 +47,7 @@ function parseAccessMode(value: unknown): "BACKEND" | "MOBILE" | null {
 }
 
 export async function createUser(formData: FormData) {
+  await ensureUserStoreColumn();
   const session = await getAuthSession();
   if (!session?.user) {
     redirect("/dashboard");
@@ -63,6 +66,7 @@ export async function createUser(formData: FormData) {
     password: formData.get("password"),
     accessMode: formData.get("accessMode"),
     roleId: formData.get("roleId"),
+    storeId: formData.get("storeId"),
     longitude: longitudeInput ? Number(longitudeInput) : undefined,
     latitude: latitudeInput ? Number(latitudeInput) : undefined,
   });
@@ -76,6 +80,13 @@ export async function createUser(formData: FormData) {
   });
   if (!role) {
     redirect("/dashboard/users?err=role");
+  }
+  const store = await prisma.store.findFirst({
+    where: { id: parsed.data.storeId, tenantId: Number(me.tenantId) },
+    select: { id: true },
+  });
+  if (!store) {
+    redirect("/dashboard/users?err=store");
   }
 
   const existingUser = await prisma.user.findUnique({
@@ -96,6 +107,7 @@ export async function createUser(formData: FormData) {
       passwordHash,
       accessMode: parsed.data.accessMode,
       roleId: parsed.data.roleId,
+      storeId: parsed.data.storeId,
       tenantId: Number(me.tenantId),
       longitude: parsed.data.longitude,
       latitude: parsed.data.latitude,

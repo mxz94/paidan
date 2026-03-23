@@ -34,6 +34,7 @@ async function ensureSchema() {
   `);
   await ensureColumn("Role", `"tenantId" INTEGER`);
   await ensureColumn("Role", `"isBuiltin" BOOLEAN NOT NULL DEFAULT false`);
+  await ensureColumn("Role", `"dataScope" TEXT NOT NULL DEFAULT 'TENANT'`);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Role_code_key" ON "Role"("code");`);
   try {
     await prisma.$executeRawUnsafe(`DROP INDEX "Role_name_key";`);
@@ -73,7 +74,9 @@ async function ensureSchema() {
   await ensureColumn("User", `"locationAt" DATETIME`);
   await ensureColumn("User", `"accessMode" TEXT NOT NULL DEFAULT 'BACKEND'`);
   await ensureColumn("User", `"tenantId" INTEGER`);
+  await ensureColumn("User", `"storeId" INTEGER`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_tenantId_idx" ON "User"("tenantId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_storeId_idx" ON "User"("storeId");`);
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RoleMenu" (
@@ -127,10 +130,15 @@ async function ensureSchema() {
   await ensureColumn("DispatchOrder", `"packageId" INTEGER`);
   await ensureColumn("DispatchOrder", `"claimedById" INTEGER`);
   await ensureColumn("DispatchOrder", `"claimedAt" DATETIME`);
+  await ensureColumn("DispatchOrder", `"appointmentAt" DATETIME`);
+  await ensureColumn("DispatchOrder", `"handledPhone" TEXT`);
+  await ensureColumn("DispatchOrder", `"convertedToPreciseById" INTEGER`);
+  await ensureColumn("DispatchOrder", `"convertedToPreciseAt" DATETIME`);
   await ensureColumn("DispatchOrder", `"isDeleted" BOOLEAN NOT NULL DEFAULT false`);
   await ensureColumn("DispatchOrder", `"tenantId" INTEGER`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrder_packageId_idx" ON "DispatchOrder"("packageId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrder_claimedById_idx" ON "DispatchOrder"("claimedById");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrder_convertedToPreciseById_idx" ON "DispatchOrder"("convertedToPreciseById");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrder_tenantId_idx" ON "DispatchOrder"("tenantId");`);
 
   await prisma.$executeRawUnsafe(`
@@ -155,6 +163,19 @@ async function ensureSchema() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrderRecord_orderId_idx" ON "DispatchOrderRecord"("orderId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrderRecord_operatorId_idx" ON "DispatchOrderRecord"("operatorId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DispatchOrderRecord_tenantId_idx" ON "DispatchOrderRecord"("tenantId");`);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Store" (
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+      "tenantId" INTEGER NOT NULL,
+      "name" TEXT NOT NULL,
+      "managerUserId" INTEGER NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_tenantId_idx" ON "Store"("tenantId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_managerUserId_idx" ON "Store"("managerUserId");`);
 }
 
 async function ensureTenantBuiltinRoles(tenantId, menus) {
@@ -163,16 +184,16 @@ async function ensureTenantBuiltinRoles(tenantId, menus) {
 
   const adminRole = await prisma.role.upsert({
     where: { code: adminCode },
-    create: { code: adminCode, name: "管理员", tenantId, isBuiltin: true },
-    update: { name: "管理员", tenantId, isBuiltin: true },
+    create: { code: adminCode, name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
+    update: { name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
   const userRole = await prisma.role.upsert({
     where: { code: userCode },
-    create: { code: userCode, name: "普通用户", tenantId, isBuiltin: true },
-    update: { name: "普通用户", tenantId, isBuiltin: true },
+    create: { code: userCode, name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
+    update: { name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
   });
 
-  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
+  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
   const userKeys = ["dashboard", "dispatch-order"];
   const adminMenus = menus.filter((m) => adminKeys.includes(m.key));
   const userMenus = menus.filter((m) => userKeys.includes(m.key));
@@ -220,9 +241,10 @@ async function main() {
     { key: "perm-order-delete-btn", name: "单据管理-删除按钮", path: "#", icon: "key", sort: 202 },
     { key: "user-manage", name: "用户管理", path: "/dashboard/users", icon: "users", sort: 3 },
     { key: "package-manage", name: "套餐管理", path: "/dashboard/packages", icon: "box", sort: 4 },
-    { key: "role-menu", name: "角色管理", path: "/dashboard/role-menus", icon: "shield", sort: 5 },
-    { key: "system-config", name: "参数配置", path: "/dashboard/settings", icon: "settings", sort: 6 },
-    { key: "tenant-manage", name: "租户管理", path: "/dashboard/tenants", icon: "building", sort: 7 },
+    { key: "store-manage", name: "门店管理", path: "/dashboard/stores", icon: "shop", sort: 5 },
+    { key: "role-menu", name: "角色管理", path: "/dashboard/role-menus", icon: "shield", sort: 6 },
+    { key: "system-config", name: "参数配置", path: "/dashboard/settings", icon: "settings", sort: 7 },
+    { key: "tenant-manage", name: "租户管理", path: "/dashboard/tenants", icon: "building", sort: 8 },
   ];
 
   for (const menu of menus) {
@@ -241,8 +263,8 @@ async function main() {
 
   const superRole = await prisma.role.upsert({
     where: { code: "SUPER_ADMIN" },
-    create: { code: "SUPER_ADMIN", name: "平台超管", tenantId: null, isBuiltin: true },
-    update: { name: "平台超管", tenantId: null, isBuiltin: true },
+    create: { code: "SUPER_ADMIN", name: "平台超管", tenantId: null, isBuiltin: true, dataScope: "TENANT" },
+    update: { name: "平台超管", tenantId: null, isBuiltin: true, dataScope: "TENANT" },
   });
 
   await prisma.roleMenu.deleteMany({ where: { roleId: superRole.id } });

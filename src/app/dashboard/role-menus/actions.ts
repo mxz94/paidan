@@ -12,6 +12,7 @@ export async function saveRoleMenus(formData: FormData) {
   }
 
   const roleId = Number(formData.get("roleId"));
+  const dataScope = String(formData.get("dataScope") ?? "OWN");
   const menuIds = formData
     .getAll("menuIds")
     .map((item) => Number(item))
@@ -30,6 +31,10 @@ export async function saveRoleMenus(formData: FormData) {
   }
 
   await prisma.$transaction(async (tx) => {
+    await tx.role.update({
+      where: { id: roleId },
+      data: { dataScope: dataScope === "TENANT" ? "TENANT" : "OWN" },
+    });
     await tx.roleMenu.deleteMany({ where: { roleId } });
 
     if (menuIds.length > 0) {

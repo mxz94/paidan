@@ -15,7 +15,7 @@ export async function getSessionUserWithTenant() {
       displayName: true,
       accessMode: true,
       tenantId: true,
-      role: { select: { code: true, name: true } },
+      role: { select: { code: true, name: true, dataScope: true } },
       tenant: { select: { id: true, code: true, name: true, isActive: true } },
     },
   });
@@ -31,4 +31,11 @@ export function isSuperAdminRole(roleCode: string) {
 
 export function isTenantAdminRole(roleCode: string) {
   return roleCode === "SUPER_ADMIN" || roleCode === "ADMIN" || roleCode.endsWith("_ADMIN");
+}
+
+export function hasTenantDataScope(roleCode: string, dataScope?: string | null) {
+  if (isTenantAdminRole(roleCode)) {
+    return true;
+  }
+  return (dataScope ?? "TENANT") !== "OWN";
 }

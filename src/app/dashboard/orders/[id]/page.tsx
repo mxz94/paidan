@@ -2,9 +2,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
-import { ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
+import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasTenantDataScope } from "@/lib/tenant";
 import { OrderAppendRecordModal } from "@/components/order-append-record-modal";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
 import { appendDispatchOrderRecordByBackend } from "../actions";
@@ -34,6 +34,7 @@ const actionLabel: Record<string, string> = {
   END: "结束",
   RESCHEDULE: "改约",
   RETURN: "退回",
+  CONVERT_PRECISE: "转精准",
 };
 
 export default async function OrderDetailPage({
@@ -43,6 +44,7 @@ export default async function OrderDetailPage({
   params: Params;
   searchParams: SearchParams;
 }) {
+  await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
 
@@ -66,6 +68,7 @@ export default async function OrderDetailPage({
     id: orderId,
     isDeleted: false,
     ...(me.tenantId ? { tenantId: me.tenantId } : {}),
+    ...(hasTenantDataScope(me.role.code, me.role.dataScope) ? {} : { createdById: Number(session.user.id) }),
   };
 
   const order = await prisma.dispatchOrder.findFirst({
@@ -74,6 +77,7 @@ export default async function OrderDetailPage({
       createdBy: { select: { username: true, displayName: true } },
       claimedBy: { select: { username: true, displayName: true } },
       package: { select: { id: true, name: true, code: true, price: true } },
+      convertedToPreciseBy: { select: { username: true, displayName: true } },
       records: {
         orderBy: { createdAt: "desc" },
         take: 50,
@@ -89,7 +93,7 @@ export default async function OrderDetailPage({
   }
   const canEdit =
     order.status === "PENDING" &&
-    (isTenantAdminRole(session.user.roleCode) || order.createdById === Number(session.user.id));
+    (hasTenantDataScope(me.role.code, me.role.dataScope) || order.createdById === Number(session.user.id));
   const opMessage: Record<string, { text: string; cls: string }> = {
     append1: { text: "追加记录成功", cls: "bg-emerald-50 text-emerald-700" },
     append0: { text: "追加记录失败：无权限或单据不存在", cls: "bg-rose-50 text-rose-700" },
@@ -103,7 +107,15 @@ export default async function OrderDetailPage({
     { label: "标题", value: order.title },
     { label: "套餐", value: order.package ? `${order.package.name} (${order.package.code})` : "-" },
     { label: "手机号", value: order.phone || "-" },
+    { label: "客户办理号码", value: order.handledPhone || "-" },
     { label: "客户类型", value: order.customerType || "-" },
+    { label: "约定时间", value: order.appointmentAt ? new Date(order.appointmentAt).toLocaleString("zh-CN") : "-" },
+    {
+      label: "转精准",
+      value: order.convertedToPreciseAt
+        ? `${order.convertedToPreciseBy?.displayName || order.convertedToPreciseBy?.username || "-"} · ${new Date(order.convertedToPreciseAt).toLocaleString("zh-CN")}`
+        : "-",
+    },
     { label: "区域", value: order.region || "-" },
     {
       label: "领取人",

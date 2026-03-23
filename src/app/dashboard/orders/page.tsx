@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
+import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
 import { LUOYANG_REGIONS } from "@/lib/regions";
 import { assignDispatchOrder, batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
 import { OrderCreateModal } from "@/components/order-create-modal";
@@ -33,7 +34,7 @@ const customerTypes = ["精准", "客服"];
 const regions = [...LUOYANG_REGIONS];
 
 const errorText: Record<string, string> = {
-  invalid: "提交失败：请检查标题和手机号格式（无需先创建套餐）。",
+  invalid: "提交失败：请检查必填项（备注、约定时间可不填）及手机号格式。",
   file: "上传失败：单据照片不能超过 10MB。",
   edit_state: "仅未领取单据可编辑。",
   import_file: "请选择要导入的文件。",
@@ -117,6 +118,7 @@ export default async function OrdersPage({
 }: {
   searchParams: SearchParams;
 }) {
+  await ensureDispatchOrderBusinessColumns();
   const session = await getAuthSession();
 
   if (!session?.user?.id) {
@@ -129,6 +131,7 @@ export default async function OrdersPage({
     redirect("/dashboard");
   }
   const isAdmin = isTenantAdminRole(me.role.code);
+  const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const keyword = String(params.keyword ?? "").trim();
   const status = String(params.status ?? "").trim();
 
@@ -138,8 +141,12 @@ export default async function OrdersPage({
   const where: {
     tenantId: number;
     isDeleted: boolean;
+    createdById?: number;
     AND?: Array<Record<string, unknown>>;
   } = { tenantId: me.tenantId, isDeleted: false };
+  if (!canViewTenantAll) {
+    where.createdById = Number(session.user.id);
+  }
   const andConditions: Array<Record<string, unknown>> = [];
 
   if (keyword) {

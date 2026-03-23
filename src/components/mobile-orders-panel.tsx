@@ -5,10 +5,10 @@ import { useMemo, useState } from "react";
 import {
   appendDispatchOrderRecord,
   claimDispatchOrder,
+  convertDispatchOrderToPrecise,
   endDispatchOrder,
   finishDispatchOrder,
   rescheduleDispatchOrder,
-  returnDispatchOrder,
 } from "@/app/mobile/actions";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
 
@@ -33,11 +33,15 @@ type OrderItem = {
   region: string;
   customerType: string;
   phone: string;
+  handledPhone: string;
   status: string;
   longitude: number | null;
   latitude: number | null;
+  appointmentAt: string | null;
   createdAt: string;
   claimedAt: string | null;
+  convertedToPreciseAt: string | null;
+  convertedToPreciseByName: string;
   createdByName: string;
   distanceKm: number | null;
   records: RecordItem[];
@@ -57,6 +61,7 @@ function actionText(actionType: string) {
   if (actionType === "END") return "结束";
   if (actionType === "RESCHEDULE") return "改约";
   if (actionType === "RETURN") return "退回";
+  if (actionType === "CONVERT_PRECISE") return "转精准";
   return actionType;
 }
 
@@ -103,8 +108,16 @@ export function MobileOrdersPanel({
 }: Props) {
   const [selectedRegion, setSelectedRegion] = useState(initialSelectedRegion === "AUTO" ? "" : (initialSelectedRegion || ""));
   const [appendOrderId, setAppendOrderId] = useState<number | null>(null);
+  const [finishOrderId, setFinishOrderId] = useState<number | null>(null);
+  const [finishHandledPhoneMap, setFinishHandledPhoneMap] = useState<Record<number, string>>({});
+  const [finishConvertPreciseMap, setFinishConvertPreciseMap] = useState<Record<number, boolean>>({});
   const [rescheduleOrderId, setRescheduleOrderId] = useState<number | null>(null);
   const [rescheduleAtMap, setRescheduleAtMap] = useState<Record<number, string>>({});
+  const [convertOrderId, setConvertOrderId] = useState<number | null>(null);
+  const [convertRemarkMap, setConvertRemarkMap] = useState<Record<number, string>>({});
+  const [convertRegionMap, setConvertRegionMap] = useState<Record<number, string>>({});
+  const [convertAddressMap, setConvertAddressMap] = useState<Record<number, string>>({});
+  const [convertAtMap, setConvertAtMap] = useState<Record<number, string>>({});
   const [recordOpenOrderId, setRecordOpenOrderId] = useState<number | null>(null);
 
   const visibleOrders = useMemo(() => {
@@ -145,8 +158,16 @@ export function MobileOrdersPanel({
       <div className="space-y-3">
         {visibleOrders.map((item) => {
           const showAppendForm = tab === "doing" && appendOrderId === item.id;
+          const showFinishForm = tab === "doing" && finishOrderId === item.id;
           const showRescheduleForm = tab === "doing" && rescheduleOrderId === item.id;
+          const showConvertForm = tab === "doing" && convertOrderId === item.id;
           const rescheduleAt = rescheduleAtMap[item.id] ?? "";
+          const convertRemark = convertRemarkMap[item.id] ?? "";
+          const convertRegion = convertRegionMap[item.id] ?? item.region ?? "";
+          const convertAddress = convertAddressMap[item.id] ?? item.address ?? "";
+          const convertAt = convertAtMap[item.id] ?? (item.appointmentAt ? item.appointmentAt.slice(0, 16) : "");
+          const finishHandledPhone = finishHandledPhoneMap[item.id] ?? "";
+          const finishConvertPrecise = finishConvertPreciseMap[item.id] ?? false;
           const calendarHref = rescheduleAt ? `/api/calendar/order/${item.id}?at=${encodeURIComponent(rescheduleAt)}` : "#";
           return (
             <article key={item.id} className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100">
@@ -183,6 +204,9 @@ export function MobileOrdersPanel({
               ) : (
                 <p className="mt-1 text-sm text-slate-500">创建时间：{new Date(item.createdAt).toLocaleString("zh-CN")}</p>
               )}
+              <p className="mt-1 text-sm text-slate-500">
+                约定时间：{item.appointmentAt ? new Date(item.appointmentAt).toLocaleString("zh-CN") : "-"}
+              </p>
               {tab !== "new" ? (
                 <p className="mt-1 text-sm text-slate-500">
                   手机号：
@@ -200,20 +224,30 @@ export function MobileOrdersPanel({
                   领取时间：{item.claimedAt ? new Date(item.claimedAt).toLocaleString("zh-CN") : "-"}
                 </p>
               ) : null}
+              {tab === "done" ? (
+                <>
+                  <p className="mt-1 text-sm text-slate-500">客户办理号码：{item.handledPhone || "-"}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    转精准：{item.convertedToPreciseAt ? `${item.convertedToPreciseByName || "-"} ${new Date(item.convertedToPreciseAt).toLocaleString("zh-CN")}` : "-"}
+                  </p>
+                </>
+              ) : null}
 
               {tab === "doing" ? (
                 <div className="mt-3 space-y-2">
                   <div className="grid grid-cols-3 gap-2">
-                    <form action={finishDispatchOrder}>
-                      <input type="hidden" name="orderId" value={item.id} />
-                      <input type="hidden" name="region" value={selectedRegion} />
-                      <button
-                        type="submit"
-                        className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
-                      >
-                        完结
-                      </button>
-                    </form>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFinishOrderId(showFinishForm ? null : item.id);
+                        setAppendOrderId(null);
+                        setRescheduleOrderId(null);
+                        setConvertOrderId(null);
+                      }}
+                      className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      {showFinishForm ? "收起" : "完结"}
+                    </button>
 
                     <form action={endDispatchOrder}>
                       <input type="hidden" name="orderId" value={item.id} />
@@ -231,6 +265,7 @@ export function MobileOrdersPanel({
                       onClick={() => {
                         setAppendOrderId(showAppendForm ? null : item.id);
                         setRescheduleOrderId(null);
+                        setConvertOrderId(null);
                       }}
                       className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
                     >
@@ -242,23 +277,70 @@ export function MobileOrdersPanel({
                       onClick={() => {
                         setRescheduleOrderId(showRescheduleForm ? null : item.id);
                         setAppendOrderId(null);
+                        setConvertOrderId(null);
                       }}
                       className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
                     >
                       {showRescheduleForm ? "收起" : "改约"}
                     </button>
 
-                    <form action={returnDispatchOrder}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConvertOrderId(showConvertForm ? null : item.id);
+                        setAppendOrderId(null);
+                        setRescheduleOrderId(null);
+                      }}
+                      className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      {showConvertForm ? "收起" : "转精准"}
+                    </button>
+                  </div>
+
+                  {showFinishForm ? (
+                    <form
+                      action={finishDispatchOrder}
+                      className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
+                    >
                       <input type="hidden" name="orderId" value={item.id} />
                       <input type="hidden" name="region" value={selectedRegion} />
+                      <input
+                        name="handledPhone"
+                        value={finishHandledPhone}
+                        onChange={(event) =>
+                          setFinishHandledPhoneMap((prev) => ({
+                            ...prev,
+                            [item.id]: event.currentTarget.value,
+                          }))
+                        }
+                        required
+                        placeholder="客户办理号码（11位）"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                        <input
+                          type="checkbox"
+                          name="convertToPrecise"
+                          value="1"
+                          checked={finishConvertPrecise}
+                          onChange={(event) =>
+                            setFinishConvertPreciseMap((prev) => ({
+                              ...prev,
+                              [item.id]: event.currentTarget.checked,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        转精准
+                      </label>
                       <button
                         type="submit"
-                        className="w-full rounded-lg border border-slate-300 bg-white py-1.5 text-xs font-semibold text-slate-700"
+                        className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
                       >
-                        退单
+                        确认完结
                       </button>
                     </form>
-                  </div>
+                  ) : null}
 
                   {showAppendForm ? (
                     <form
@@ -337,6 +419,68 @@ export function MobileOrdersPanel({
                       >
                         加入日历提醒
                       </a>
+                    </form>
+                  ) : null}
+
+                  {showConvertForm ? (
+                    <form action={convertDispatchOrderToPrecise} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <input type="hidden" name="orderId" value={item.id} />
+                      <input type="hidden" name="region" value={selectedRegion} />
+                      <input
+                        name="regionText"
+                        value={convertRegion}
+                        onChange={(event) =>
+                          setConvertRegionMap((prev) => ({
+                            ...prev,
+                            [item.id]: event.currentTarget.value,
+                          }))
+                        }
+                        placeholder="区域（可修改）"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <input
+                        name="address"
+                        value={convertAddress}
+                        onChange={(event) =>
+                          setConvertAddressMap((prev) => ({
+                            ...prev,
+                            [item.id]: event.currentTarget.value,
+                          }))
+                        }
+                        placeholder="地址（可修改）"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <input
+                        name="appointmentAt"
+                        type="datetime-local"
+                        value={convertAt}
+                        onChange={(event) =>
+                          setConvertAtMap((prev) => ({
+                            ...prev,
+                            [item.id]: event.currentTarget.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <textarea
+                        name="remark"
+                        value={convertRemark}
+                        onChange={(event) =>
+                          setConvertRemarkMap((prev) => ({
+                            ...prev,
+                            [item.id]: event.currentTarget.value,
+                          }))
+                        }
+                        placeholder="转精准备注（可选）"
+                        rows={2}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+                      >
+                        确认转精准
+                      </button>
                     </form>
                   ) : null}
                 </div>

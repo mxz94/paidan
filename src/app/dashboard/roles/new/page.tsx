@@ -43,6 +43,18 @@ export default async function NewRolePage({
             <p className="mt-1 text-xs text-slate-500">系统会自动生成角色编码，无需手动填写。</p>
           </label>
 
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">数据权限</span>
+            <select
+              name="dataScope"
+              defaultValue="OWN"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+            >
+              <option value="OWN">仅自己的</option>
+              <option value="TENANT">整个租户</option>
+            </select>
+          </label>
+
           {params.err ? (
             <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{errorText[params.err] ?? "创建失败，请重试。"}</p>
           ) : null}

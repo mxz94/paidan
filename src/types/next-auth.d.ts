@@ -6,6 +6,7 @@ declare module "next-auth" {
   interface User extends DefaultUser {
     roleCode: string;
     roleName: string;
+    roleDataScope: string;
     username: string;
     accessMode: string;
     tenantId: string;
@@ -17,6 +18,7 @@ declare module "next-auth" {
       id: string;
       roleCode: string;
       roleName: string;
+      roleDataScope: string;
       username: string;
       accessMode: string;
       tenantId: string;
@@ -30,6 +32,7 @@ declare module "next-auth/jwt" {
     id: string;
     roleCode: string;
     roleName: string;
+    roleDataScope: string;
     username: string;
     accessMode: string;
     tenantId: string;

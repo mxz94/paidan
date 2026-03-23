@@ -15,16 +15,16 @@ async function ensureTenantBuiltinRoles(tenantId: number) {
   const allMenus = await prisma.menu.findMany({ orderBy: { sort: "asc" } });
   const adminRole = await prisma.role.upsert({
     where: { code: `TENANT_${tenantId}_ADMIN` },
-    create: { code: `TENANT_${tenantId}_ADMIN`, name: "管理员", tenantId, isBuiltin: true },
-    update: { name: "管理员", tenantId, isBuiltin: true },
+    create: { code: `TENANT_${tenantId}_ADMIN`, name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
+    update: { name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
   await prisma.role.upsert({
     where: { code: `TENANT_${tenantId}_USER` },
-    create: { code: `TENANT_${tenantId}_USER`, name: "普通用户", tenantId, isBuiltin: true },
-    update: { name: "普通用户", tenantId, isBuiltin: true },
+    create: { code: `TENANT_${tenantId}_USER`, name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
+    update: { name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
   });
 
-  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
+  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
   const adminMenus = allMenus.filter((m) => adminKeys.includes(m.key));
 
   await prisma.roleMenu.deleteMany({ where: { roleId: adminRole.id } });

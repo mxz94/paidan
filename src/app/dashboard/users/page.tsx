@@ -1,5 +1,6 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
+import { ensureUserStoreColumn } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { UserCreateModal } from "@/components/user-create-modal";
@@ -21,6 +22,7 @@ type SearchParams = Promise<{
 const errorText: Record<string, string> = {
   invalid: "请完整填写信息（用户名至少3位，密码至少6位）。",
   role: "角色不存在，请刷新后重试。",
+  store: "请选择有效门店。",
   exists: "用户名已存在，请换一个用户名。",
   import_file: "请选择要导入的文件。",
   import_invalid: "导入失败：文件格式或数据内容不正确，请检查后重试。",
@@ -43,6 +45,7 @@ export default async function UsersPage({
 }: {
   searchParams: SearchParams;
 }) {
+  await ensureUserStoreColumn();
   const session = await getAuthSession();
 
   if (!session?.user?.id) {
@@ -60,10 +63,18 @@ export default async function UsersPage({
   }
 
   const params = await searchParams;
-  const roles = await prisma.role.findMany({
-    where: { tenantId: Number(me.tenantId) },
-    orderBy: { id: "asc" },
-  });
+  const [roles, stores] = await Promise.all([
+    prisma.role.findMany({
+      where: { tenantId: Number(me.tenantId) },
+      orderBy: { id: "asc" },
+    }),
+    prisma.store.findMany({
+      where: { tenantId: Number(me.tenantId) },
+      select: { id: true, name: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
   const keyword = String(params.keyword ?? "").trim();
   const roleId = Number(params.roleId ?? 0);
   const accessMode = String(params.accessMode ?? "").trim();
@@ -77,10 +88,7 @@ export default async function UsersPage({
   const andConditions: Array<Record<string, unknown>> = [];
   if (keyword) {
     andConditions.push({
-      OR: [
-        { username: { contains: keyword } },
-        { displayName: { contains: keyword } },
-      ],
+      OR: [{ username: { contains: keyword } }, { displayName: { contains: keyword } }],
     });
   }
   if (Number.isInteger(roleId) && roleId > 0) {
@@ -100,7 +108,7 @@ export default async function UsersPage({
 
   const users = await prisma.user.findMany({
     where: queryWhere,
-    include: { role: true },
+    include: { role: true, store: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
     skip: (currentPage - 1) * pageSize,
     take: pageSize,
@@ -131,7 +139,7 @@ export default async function UsersPage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">用户管理</h1>
-            <p className="mt-2 text-sm text-slate-600">新增用户并分配角色，支持桌面和移动端。</p>
+            <p className="mt-2 text-sm text-slate-600">新增用户需绑定门店，支持桌面和移动端。</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <UserLocationsMapModal
@@ -152,6 +160,7 @@ export default async function UsersPage({
             />
             <UserCreateModal
               roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+              stores={stores.map((item) => ({ id: item.id, name: item.name }))}
               action={async (formData) => {
                 "use server";
                 const { createUser } = await import("./actions");
@@ -228,6 +237,7 @@ export default async function UsersPage({
                 <th className="px-2 py-2 font-medium">用户名</th>
                 <th className="px-2 py-2 font-medium">姓名</th>
                 <th className="px-2 py-2 font-medium">角色</th>
+                <th className="px-2 py-2 font-medium">门店</th>
                 <th className="px-2 py-2 font-medium">登录端</th>
                 <th className="px-2 py-2 font-medium">经纬度</th>
                 <th className="px-2 py-2 font-medium">定位更新时间</th>
@@ -240,6 +250,7 @@ export default async function UsersPage({
                   <td className="px-2 py-3">{user.username}</td>
                   <td className="px-2 py-3">{user.displayName}</td>
                   <td className="px-2 py-3">{user.role.name}</td>
+                  <td className="px-2 py-3">{user.store?.name || "-"}</td>
                   <td className="px-2 py-3">{user.accessMode === "MOBILE" ? "移动端" : "后台端"}</td>
                   <td className="px-2 py-3 text-slate-500">
                     <UserLocationMapButton
@@ -265,6 +276,7 @@ export default async function UsersPage({
               <p className="text-sm font-semibold text-slate-900">{user.displayName}</p>
               <p className="mt-1 text-xs text-slate-500">账号：{user.username}</p>
               <p className="mt-1 text-xs text-slate-500">角色：{user.role.name}</p>
+              <p className="mt-1 text-xs text-slate-500">门店：{user.store?.name || "-"}</p>
               <p className="mt-1 text-xs text-slate-500">登录端：{user.accessMode === "MOBILE" ? "移动端" : "后台端"}</p>
               <p className="mt-1 text-xs text-slate-500">
                 经纬度：
@@ -308,4 +320,3 @@ export default async function UsersPage({
     </section>
   );
 }
-

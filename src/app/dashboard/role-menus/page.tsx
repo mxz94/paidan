@@ -89,6 +89,20 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
 
         <form action={saveRoleMenus} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <input type="hidden" name="roleId" value={role.id} />
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700">
+              数据权限
+              <select
+                name="dataScope"
+                defaultValue={role.dataScope ?? "OWN"}
+                disabled={role.isBuiltin}
+                className="mt-1 w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                <option value="OWN">仅自己的</option>
+                <option value="TENANT">整个租户</option>
+              </select>
+            </label>
+          </div>
 
           <div className="space-y-3">
             {menuGroups.map(({ root, children }) => (
