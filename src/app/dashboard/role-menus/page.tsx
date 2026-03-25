@@ -24,6 +24,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
   });
 
   const menus = await prisma.menu.findMany({
+    where: { key: { notIn: ["perm-order-dispatch-assign"] } },
     include: { parent: { select: { id: true } } },
     orderBy: [{ sort: "asc" }, { id: "asc" }],
   });
@@ -58,7 +59,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">角色管理</h1>
-            <p className="mt-2 text-sm text-slate-600">每个租户独立角色。系统内置角色不可编辑。</p>
+            <p className="mt-2 text-sm text-slate-600">每个租户独立角色，可按需配置菜单和数据权限。</p>
           </div>
           <Link href="/dashboard/roles/new" className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
             新增角色
@@ -67,7 +68,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
 
         {params.created === "1" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">角色创建成功</p> : null}
         {params.saved === "1" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">保存成功</p> : null}
-        {params.err === "forbidden" ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">系统内置角色不允许修改</p> : null}
+        {params.err === "invalid_role" ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">角色不存在或无权限</p> : null}
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[260px,1fr]">
@@ -80,7 +81,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
                   href={`/dashboard/role-menus?role=${item.id}`}
                   className={`block whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium ${item.id === role.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
                 >
-                  {item.name}{item.isBuiltin ? "（内置）" : ""}
+                  {item.name}
                 </Link>
               </li>
             ))}
@@ -95,11 +96,11 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
               <select
                 name="dataScope"
                 defaultValue={role.dataScope ?? "OWN"}
-                disabled={role.isBuiltin}
                 className="mt-1 w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
-                <option value="OWN">仅自己的</option>
-                <option value="TENANT">整个租户</option>
+                <option value="TENANT">租户</option>
+                <option value="STORE">门店</option>
+                <option value="OWN">个人</option>
               </select>
             </label>
           </div>
@@ -108,7 +109,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
             {menuGroups.map(({ root, children }) => (
               <div key={root.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                 <label className="flex items-center gap-3">
-                  <input type="checkbox" name="menuIds" value={root.id} defaultChecked={assignedSet.has(root.id)} className="h-4 w-4 rounded border-slate-300" disabled={role.isBuiltin} />
+                  <input type="checkbox" name="menuIds" value={root.id} defaultChecked={assignedSet.has(root.id)} className="h-4 w-4 rounded border-slate-300" />
                   <span>
                     <span className="block text-sm font-semibold text-slate-900">{root.name}</span>
                     <span className="block text-xs text-slate-500">{root.path}</span>
@@ -121,7 +122,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
                     <div className="grid gap-2 sm:grid-cols-2">
                       {children.map((child) => (
                         <label key={child.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2">
-                          <input type="checkbox" name="menuIds" value={child.id} defaultChecked={assignedSet.has(child.id)} className="h-4 w-4 rounded border-slate-300" disabled={role.isBuiltin} />
+                          <input type="checkbox" name="menuIds" value={child.id} defaultChecked={assignedSet.has(child.id)} className="h-4 w-4 rounded border-slate-300" />
                           <span>
                             <span className="block text-sm text-slate-900">{child.name}</span>
                             <span className="block text-xs text-slate-500">{child.path}</span>
@@ -135,8 +136,8 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
             ))}
           </div>
 
-          <button type="submit" disabled={role.isBuiltin} className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto">
-            {role.isBuiltin ? "内置角色不可编辑" : "保存权限"}
+          <button type="submit" className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 sm:w-auto">
+            保存权限
           </button>
         </form>
       </div>

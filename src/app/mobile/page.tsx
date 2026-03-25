@@ -4,8 +4,10 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
+import { canAccessMobile } from "@/lib/user-access";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
 import { MobileOrdersPanel } from "@/components/mobile-orders-panel";
+import { MobileAutoLocationRefresh } from "@/components/mobile-auto-location-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -32,22 +34,28 @@ const opMessage: Record<string, { text: string; cls: string }> = {
   append1: { text: "追加记录成功", cls: "bg-emerald-50 text-emerald-700" },
   append0: { text: "追加记录失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
   "append-empty": { text: "请填写备注或上传照片", cls: "bg-rose-50 text-rose-700" },
-  finish1: { text: "单据已完结", cls: "bg-emerald-50 text-emerald-700" },
-  finish0: { text: "完结失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
-  "finish-handle-phone": { text: "完结失败：请填写11位客户办理号码", cls: "bg-rose-50 text-rose-700" },
-  "finish-distance": { text: "完结失败：精准客资需在客户位置 2km 内", cls: "bg-rose-50 text-rose-700" },
-  end1: { text: "单据已结束", cls: "bg-emerald-50 text-emerald-700" },
-  end0: { text: "结束失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
-  "end-distance": { text: "结束失败：精准客资需在客户位置 2km 内", cls: "bg-rose-50 text-rose-700" },
+  finish1: { text: "单据已办理", cls: "bg-emerald-50 text-emerald-700" },
+  finish0: { text: "已办理失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
+  "finish-handle-phone": { text: "已办理失败：办理号码格式不正确（需11位手机号）", cls: "bg-rose-50 text-rose-700" },
+  end1: { text: "单据已标记为不办理", cls: "bg-emerald-50 text-emerald-700" },
+  end0: { text: "不办理失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
+  "end-reason": { text: "不办理失败：请选择原因", cls: "bg-rose-50 text-rose-700" },
+  "end-remark": { text: "不办理失败：请填写备注", cls: "bg-rose-50 text-rose-700" },
   reschedule1: { text: "改约成功", cls: "bg-emerald-50 text-emerald-700" },
   reschedule0: { text: "改约失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
   "reschedule-empty": { text: "请先选择改约时间", cls: "bg-rose-50 text-rose-700" },
+  "reschedule-range": { text: "改约失败：仅支持选择当前时间至7天内", cls: "bg-rose-50 text-rose-700" },
   convert1: { text: "已转为精准单据并回到未领取", cls: "bg-emerald-50 text-emerald-700" },
   convert0: { text: "转精准失败：仅可操作本人进行中的单据", cls: "bg-rose-50 text-rose-700" },
   "convert-date": { text: "转精准失败：约定时间格式不正确", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-precise": { text: "今日精准客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-service": { text: "今日客服客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
   file: { text: "上传失败：图片不能超过 10MB", cls: "bg-rose-50 text-rose-700" },
+  "profile-pwd1": { text: "个人中心：密码修改成功", cls: "bg-emerald-50 text-emerald-700" },
+  "profile-pwd0": { text: "个人中心：请填写完整密码信息", cls: "bg-rose-50 text-rose-700" },
+  "profile-pwd-short": { text: "个人中心：新密码至少 6 位", cls: "bg-rose-50 text-rose-700" },
+  "profile-pwd-mismatch": { text: "个人中心：两次输入的新密码不一致", cls: "bg-rose-50 text-rose-700" },
+  "profile-pwd-old": { text: "个人中心：原密码错误", cls: "bg-rose-50 text-rose-700" },
 };
 
 export default async function MobilePage({ searchParams }: { searchParams: SearchParams }) {
@@ -61,14 +69,14 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
 
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true, tenantId: true },
+    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true, tenantId: true, isDeleted: true, isDisabled: true },
   });
 
-  if (!me) {
+  if (!me || me.isDeleted || me.isDisabled) {
     redirect("/login");
   }
 
-  if (me.accessMode !== "MOBILE") {
+  if (!canAccessMobile(me.accessMode)) {
     redirect("/dashboard");
   }
   if (!me.tenantId) {
@@ -103,6 +111,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
       customerType: true,
       phone: true,
       handledPhone: true,
+      notHandledReason: true,
       status: true,
       longitude: true,
       latitude: true,
@@ -178,6 +187,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   const queryOf = (nextTab: string) => {
     const qs = new URLSearchParams();
     qs.set("tab", nextTab);
+    if (selectedRegionRaw && selectedRegionRaw !== "AUTO") qs.set("region", selectedRegionRaw);
     return qs.toString();
   };
 
@@ -186,6 +196,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   return (
     <main className="min-h-screen bg-slate-100 p-3 text-slate-900">
       <section className="mx-auto max-w-md space-y-3">
+        <MobileAutoLocationRefresh enabled />
         <MobileTopPanel
           displayName={me.displayName}
           latitude={me.latitude ?? null}
@@ -193,6 +204,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
           claimed={params.claimed}
           opText={opInfo?.text}
           opClassName={opInfo?.cls}
+          profileHref={`/mobile/profile?tab=${tab}`}
           orders={ordersWithDistance.map((item) => ({
             id: item.id,
             title: item.title,
@@ -227,6 +239,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
 
         <MobileOrdersPanel
           tab={tab}
+          accessMode={me.accessMode}
           regions={regions}
           initialSelectedRegion={selectedRegionRaw}
           orders={ordersWithDistance.map((item) => ({
@@ -237,11 +250,13 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
             customerType: item.customerType || "",
             phone: item.phone || "",
             handledPhone: item.handledPhone || "",
+            notHandledReason: item.notHandledReason || "",
             status: item.status,
             longitude: item.longitude ?? null,
             latitude: item.latitude ?? null,
             appointmentAt: item.appointmentAt ? item.appointmentAt.toISOString() : null,
             createdAt: item.createdAt.toISOString(),
+            updatedAt: item.updatedAt.toISOString(),
             claimedAt: item.claimedAt ? item.claimedAt.toISOString() : null,
             convertedToPreciseAt: item.convertedToPreciseAt ? item.convertedToPreciseAt.toISOString() : null,
             convertedToPreciseByName: item.convertedToPreciseBy

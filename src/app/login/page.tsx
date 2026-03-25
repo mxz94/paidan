@@ -28,7 +28,7 @@ export default function LoginPage() {
         return;
       }
 
-      setError("账号或密码错误，请重试。");
+      setError("账号密码错误，或该账号无权限登录。");
     });
   };
 

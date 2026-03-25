@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
-import { LogoutButton } from "@/components/logout-button";
 import { MobileLocationSync } from "@/components/mobile-location-sync";
 
 type MenuItem = {
@@ -100,11 +99,18 @@ export function DashboardFrame({ displayName, roleName, menus, children }: Props
           </nav>
         ) : null}
 
-        {!collapsed ? (
-          <div className="p-3 md:absolute md:bottom-0 md:left-0 md:w-full md:p-4">
-            <LogoutButton />
-          </div>
-        ) : null}
+        <div className="p-2 md:absolute md:bottom-0 md:left-0 md:w-full md:p-3">
+          <Link
+            href="/dashboard/profile"
+            title="个人中心"
+            className={`inline-flex w-full cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50 ${
+              collapsed ? "h-9 px-0" : "h-10 px-3"
+            }`}
+          >
+            {collapsed ? "我" : "个人中心"}
+          </Link>
+        </div>
+
       </aside>
 
       <main

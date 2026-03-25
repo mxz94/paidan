@@ -1,20 +1,18 @@
 ﻿import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
-import { LUOYANG_REGIONS } from "@/lib/regions";
-import { assignDispatchOrder, batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
+import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
+import { LUOYANG_REGION_TREE, getLuoyangTowns } from "@/lib/regions";
+import { batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
 import { OrderCreateModal } from "@/components/order-create-modal";
-import { OrderImportModal } from "@/components/order-import-modal";
-import { OrderAssignModal } from "@/components/order-assign-modal";
 import { OrderListMapModal } from "@/components/order-list-map-modal";
 import { OrderLocationMapButton } from "@/components/order-location-map-button";
 import { OrderPhotoLightbox } from "@/components/order-photo-lightbox";
 import { BatchSelectAllCheckbox } from "@/components/batch-select-all-checkbox";
-import { BatchAssignButton } from "@/components/batch-assign-button";
 
 type SearchParams = Promise<{
   created?: string;
@@ -28,10 +26,17 @@ type SearchParams = Promise<{
   pageSize?: string;
   keyword?: string;
   status?: string;
+  district?: string;
+  town?: string;
+  createdById?: string;
+  claimedById?: string;
+  convertedById?: string;
+  sortBy?: string;
+  sortDir?: string;
 }>;
 
 const customerTypes = ["精准", "客服"];
-const regions = [...LUOYANG_REGIONS];
+const regionTree = [...LUOYANG_REGION_TREE];
 
 const errorText: Record<string, string> = {
   invalid: "提交失败：请检查必填项（备注、约定时间可不填）及手机号格式。",
@@ -50,8 +55,8 @@ const errorText: Record<string, string> = {
 const statusLabel: Record<string, string> = {
   PENDING: "未领取",
   CLAIMED: "已领取",
-  DONE: "已完结",
-  ENDED: "结束",
+  DONE: "已办理",
+  ENDED: "不办理",
 };
 
 function customerTypeBadge(customerType: string) {
@@ -113,6 +118,51 @@ function buildPageItems(currentPage: number, totalPages: number) {
   return items;
 }
 
+type SortDir = "asc" | "desc";
+type SortBy =
+  | "id"
+  | "title"
+  | "address"
+  | "customerType"
+  | "location"
+  | "status"
+  | "photoUrl"
+  | "storeName"
+  | "createdBy"
+  | "createdAt"
+  | "claimedBy"
+  | "claimedAt"
+  | "convertedBy"
+  | "convertedAt";
+
+const ORDER_SORT_FIELDS: SortBy[] = [
+  "id",
+  "title",
+  "address",
+  "customerType",
+  "location",
+  "status",
+  "photoUrl",
+  "storeName",
+  "createdBy",
+  "createdAt",
+  "claimedBy",
+  "claimedAt",
+  "convertedBy",
+  "convertedAt",
+];
+
+function isSortBy(value: string): value is SortBy {
+  return ORDER_SORT_FIELDS.includes(value as SortBy);
+}
+
+function getSortIcon(activeSortBy: SortBy, activeSortDir: SortDir, field: SortBy) {
+  if (activeSortBy !== field) {
+    return "↕";
+  }
+  return activeSortDir === "asc" ? "↑" : "↓";
+}
+
 export default async function OrdersPage({
   searchParams,
 }: {
@@ -134,18 +184,30 @@ export default async function OrdersPage({
   const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const keyword = String(params.keyword ?? "").trim();
   const status = String(params.status ?? "").trim();
+  const district = String(params.district ?? "").trim();
+  const town = String(params.town ?? "").trim();
+  const createdByIdRaw = String(params.createdById ?? "").trim();
+  const claimedByIdRaw = String(params.claimedById ?? "").trim();
+  const convertedByIdRaw = String(params.convertedById ?? "").trim();
+  const createdByFilter = Number(createdByIdRaw);
+  const claimedByFilter = Number(claimedByIdRaw);
+  const convertedByFilter = Number(convertedByIdRaw);
+  const rawSortBy = String(params.sortBy ?? "").trim();
+  const rawSortDir = String(params.sortDir ?? "").trim().toLowerCase();
+  const sortBy: SortBy = isSortBy(rawSortBy) ? rawSortBy : "createdAt";
+  const sortDir: SortDir = rawSortDir === "asc" ? "asc" : "desc";
+  const townOptions = district ? getLuoyangTowns(district) : [];
 
   const pageSize = Math.min(Math.max(Number(params.pageSize ?? 10), 10), 100);
   const page = Math.max(Number(params.page ?? 1), 1);
 
-  const where: {
-    tenantId: number;
-    isDeleted: boolean;
-    createdById?: number;
-    AND?: Array<Record<string, unknown>>;
-  } = { tenantId: me.tenantId, isDeleted: false };
+  const where: Prisma.DispatchOrderWhereInput = { tenantId: me.tenantId, isDeleted: false };
   if (!canViewTenantAll) {
-    where.createdById = Number(session.user.id);
+    if (hasStoreDataScope(me.role.code, me.role.dataScope) && me.storeId) {
+      where.createdBy = { storeId: Number(me.storeId) };
+    } else {
+      where.createdById = Number(session.user.id);
+    }
   }
   const andConditions: Array<Record<string, unknown>> = [];
 
@@ -161,6 +223,24 @@ export default async function OrdersPage({
   if (status) {
     andConditions.push({ status });
   }
+  if (district || town) {
+    const locationKeywords = [district, town].filter(Boolean);
+    andConditions.push({
+      OR: locationKeywords.flatMap((item) => [
+        { region: { contains: item } },
+        { address: { contains: item } },
+      ]),
+    });
+  }
+  if (Number.isInteger(createdByFilter) && createdByFilter > 0) {
+    andConditions.push({ createdById: createdByFilter });
+  }
+  if (Number.isInteger(claimedByFilter) && claimedByFilter > 0) {
+    andConditions.push({ claimedById: claimedByFilter });
+  }
+  if (Number.isInteger(convertedByFilter) && convertedByFilter > 0) {
+    andConditions.push({ convertedToPreciseById: convertedByFilter });
+  }
   if (andConditions.length > 0) {
     where.AND = andConditions;
   }
@@ -170,19 +250,72 @@ export default async function OrdersPage({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
 
+  const userWhere: Prisma.UserWhereInput = {
+    tenantId: me.tenantId,
+    isDeleted: false,
+    isDisabled: false,
+  };
+  if (!canViewTenantAll) {
+    if (hasStoreDataScope(me.role.code, me.role.dataScope) && me.storeId) {
+      userWhere.storeId = Number(me.storeId);
+    } else {
+      userWhere.id = Number(session.user.id);
+    }
+  }
+  const filterUsers = await prisma.user.findMany({
+    where: userWhere,
+    select: { id: true, displayName: true, username: true },
+    orderBy: [{ displayName: "asc" }, { username: "asc" }],
+  });
+
   const packages = await prisma.package.findMany({
     where: { tenantId: me.tenantId, isActive: true },
     orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
   });
 
+  const orderBy: Prisma.DispatchOrderOrderByWithRelationInput[] = (() => {
+    switch (sortBy) {
+      case "id":
+        return [{ id: sortDir }];
+      case "title":
+        return [{ title: sortDir }, { id: "desc" }];
+      case "address":
+        return [{ address: sortDir }, { id: "desc" }];
+      case "customerType":
+        return [{ customerType: sortDir }, { id: "desc" }];
+      case "location":
+        return [{ longitude: sortDir }, { latitude: sortDir }, { id: "desc" }];
+      case "status":
+        return [{ status: sortDir }, { id: "desc" }];
+      case "photoUrl":
+        return [{ photoUrl: sortDir }, { id: "desc" }];
+      case "storeName":
+        return [{ createdBy: { store: { name: sortDir } } }, { id: "desc" }];
+      case "createdBy":
+        return [{ createdBy: { displayName: sortDir } }, { id: "desc" }];
+      case "claimedBy":
+        return [{ claimedBy: { displayName: sortDir } }, { id: "desc" }];
+      case "claimedAt":
+        return [{ claimedAt: sortDir }, { id: "desc" }];
+      case "convertedBy":
+        return [{ convertedToPreciseBy: { displayName: sortDir } }, { id: "desc" }];
+      case "convertedAt":
+        return [{ convertedToPreciseAt: sortDir }, { id: "desc" }];
+      case "createdAt":
+      default:
+        return [{ createdAt: sortDir }, { id: "desc" }];
+    }
+  })();
+
   const orders = await prisma.dispatchOrder.findMany({
     where: queryWhere,
     include: {
-      createdBy: { select: { displayName: true, username: true } },
+      createdBy: { select: { displayName: true, username: true, store: { select: { name: true } } } },
       claimedBy: { select: { displayName: true, username: true } },
+      convertedToPreciseBy: { select: { displayName: true, username: true } },
       package: { select: { name: true, code: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy,
     skip: (currentPage - 1) * pageSize,
     take: pageSize,
   });
@@ -212,27 +345,42 @@ export default async function OrdersPage({
     },
   });
   const canAssign =
-    (currentUser?.role.code ? isTenantAdminRole(currentUser.role.code) : false) ||
-    currentUser?.role.roleMenus.some((item) => item.menu.key === "perm-order-dispatch-assign") ||
     false;
   const canDelete =
     (currentUser?.role.code ? isTenantAdminRole(currentUser.role.code) : false) ||
     currentUser?.role.roleMenus.some((item) => item.menu.key === "perm-order-delete-btn") ||
     false;
-  const mobileUsers = canAssign
-    ? await prisma.user.findMany({
-        where: { tenantId: me.tenantId, accessMode: "MOBILE" },
-        select: { id: true, displayName: true, username: true },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
 
   const commonQuery = {
     page: currentPage,
     pageSize,
     keyword,
     status,
+    district,
+    town,
+    createdById: createdByIdRaw,
+    claimedById: claimedByIdRaw,
+    convertedById: convertedByIdRaw,
+    sortBy,
+    sortDir,
   };
+  const sortQueryBase = {
+    pageSize,
+    keyword,
+    status,
+    district,
+    town,
+    createdById: createdByIdRaw,
+    claimedById: claimedByIdRaw,
+    convertedById: convertedByIdRaw,
+  };
+  const getSortHref = (field: SortBy) =>
+    `/dashboard/orders?${buildQuery({
+      ...sortQueryBase,
+      page: 1,
+      sortBy: field,
+      sortDir: sortBy === field && sortDir === "desc" ? "asc" : "desc",
+    })}`;
   const pageItems = buildPageItems(currentPage, totalPages);
   const photoItems = orders
     .filter((item) => Boolean(item.photoUrl))
@@ -271,6 +419,8 @@ export default async function OrdersPage({
       <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <form className="mb-2 flex items-center gap-2 overflow-x-auto rounded-lg border border-slate-200 p-2 whitespace-nowrap">
           <input type="hidden" name="pageSize" value={pageSize} />
+          <input type="hidden" name="sortBy" value={sortBy} />
+          <input type="hidden" name="sortDir" value={sortDir} />
           <input
             name="keyword"
             defaultValue={keyword}
@@ -285,8 +435,68 @@ export default async function OrdersPage({
             <option value="">全部状态</option>
             <option value="PENDING">未领取</option>
             <option value="CLAIMED">已领取</option>
-            <option value="DONE">已完结</option>
-            <option value="ENDED">结束</option>
+            <option value="DONE">已办理</option>
+            <option value="ENDED">不办理</option>
+          </select>
+          <select
+            name="district"
+            defaultValue={district}
+            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">全部区/县</option>
+            {regionTree.map((item) => (
+              <option key={item.district} value={item.district}>
+                {item.district}
+              </option>
+            ))}
+          </select>
+          <select
+            name="town"
+            defaultValue={town}
+            className="h-8 w-36 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">全部镇/街道</option>
+            {townOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select
+            name="createdById"
+            defaultValue={createdByIdRaw}
+            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">创建人</option>
+            {filterUsers.map((user) => (
+              <option key={`created-${user.id}`} value={user.id}>
+                {user.displayName || user.username}
+              </option>
+            ))}
+          </select>
+          <select
+            name="claimedById"
+            defaultValue={claimedByIdRaw}
+            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">领取人</option>
+            {filterUsers.map((user) => (
+              <option key={`claimed-${user.id}`} value={user.id}>
+                {user.displayName || user.username}
+              </option>
+            ))}
+          </select>
+          <select
+            name="convertedById"
+            defaultValue={convertedByIdRaw}
+            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">转精准人</option>
+            {filterUsers.map((user) => (
+              <option key={`converted-${user.id}`} value={user.id}>
+                {user.displayName || user.username}
+              </option>
+            ))}
           </select>
           <input type="hidden" name="page" value="1" />
           <button
@@ -296,7 +506,7 @@ export default async function OrdersPage({
             筛选
           </button>
           <Link
-            href={`/dashboard/orders?${buildQuery({ pageSize })}`}
+            href={`/dashboard/orders?${buildQuery({ pageSize, sortBy, sortDir })}`}
             className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-slate-300 px-2.5 text-[11px] font-semibold leading-none text-slate-700 transition hover:bg-slate-50"
           >
             重置
@@ -304,35 +514,6 @@ export default async function OrdersPage({
         </form>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-2">
-            <OrderImportModal
-              action={async (formData) => {
-                "use server";
-                const { importDispatchOrders } = await import("./actions");
-                await importDispatchOrders(formData);
-              }}
-            />
-            <OrderImportModal
-              buttonText="客资导入"
-              modalTitle="客资导入"
-              description="支持 xlsx/csv。表头：邀约日期、邀约客服、客户电话、客户地址、邀约见面时间、号码类型。默认客户类型=客服，单次最多 500 条。"
-              templateHref="/dashboard/orders/leads-template"
-              templateText="下载客资模板（xlsx）"
-              action={async (formData) => {
-                "use server";
-                const { importLeadDispatchOrders } = await import("./actions");
-                await importLeadDispatchOrders(formData);
-              }}
-            />
-            <Link
-              href={`/dashboard/orders/export?${buildQuery({
-                keyword,
-                status,
-                format: "xlsx",
-              })}`}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              导出 XLSX
-            </Link>
             <OrderListMapModal
               orders={mapOrders.map((item) => ({
                 id: item.id,
@@ -347,7 +528,8 @@ export default async function OrdersPage({
             <OrderCreateModal
               packages={packages}
               customerTypes={customerTypes}
-              regions={regions}
+              regionTree={regionTree}
+              currentAccessMode={me.accessMode}
               action={async (formData) => {
                 "use server";
                 const { createDispatchOrder } = await import("./actions");
@@ -372,9 +554,16 @@ export default async function OrdersPage({
           <div className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="keyword" value={keyword} />
             <input type="hidden" name="status" value={status} />
+            <input type="hidden" name="district" value={district} />
+            <input type="hidden" name="town" value={town} />
+            <input type="hidden" name="createdById" value={createdByIdRaw} />
+            <input type="hidden" name="claimedById" value={claimedByIdRaw} />
+            <input type="hidden" name="convertedById" value={convertedByIdRaw} />
             <input type="hidden" name="pageSize" value={pageSize} />
+            <input type="hidden" name="sortBy" value={sortBy} />
+            <input type="hidden" name="sortDir" value={sortDir} />
             {canAssign ? (
-              <BatchAssignButton users={mobileUsers} formId="batch-operate-form" checkboxSelector=".batch-order-checkbox" />
+              null
             ) : null}
             {canDelete ? (
               <button
@@ -398,16 +587,76 @@ export default async function OrdersPage({
                     <BatchSelectAllCheckbox targetSelector=".batch-order-checkbox" />
                   </div>
                 </th>
-                <th className="w-[180px] px-3 py-2 font-semibold">标题</th>
-                <th className="w-[120px] px-3 py-2 font-semibold">地址</th>
-                <th className="w-[88px] px-3 py-2 font-semibold">客户类型</th>
-                <th className="w-[84px] px-3 py-2 font-semibold">位置</th>
-                <th className="w-[96px] px-3 py-2 font-semibold">单据状态</th>
-                <th className="w-[92px] px-3 py-2 font-semibold">照片/附件</th>
-                <th className="w-[100px] px-3 py-2 font-semibold">创建人</th>
-                <th className="w-[165px] px-3 py-2 font-semibold">创建时间</th>
-                <th className="w-[100px] px-3 py-2 font-semibold">领取人</th>
-                <th className="w-[165px] px-3 py-2 font-semibold">领取时间</th>
+                <th className="w-[72px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("id")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    ID <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "id")}</span>
+                  </Link>
+                </th>
+                <th className="w-[180px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("title")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    标题 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "title")}</span>
+                  </Link>
+                </th>
+                <th className="w-[120px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("address")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    地址 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "address")}</span>
+                  </Link>
+                </th>
+                <th className="w-[88px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("customerType")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    客户类型 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "customerType")}</span>
+                  </Link>
+                </th>
+                <th className="w-[84px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("location")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    位置 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "location")}</span>
+                  </Link>
+                </th>
+                <th className="w-[96px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("status")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    单据状态 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "status")}</span>
+                  </Link>
+                </th>
+                <th className="w-[92px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("photoUrl")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    照片/附件 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "photoUrl")}</span>
+                  </Link>
+                </th>
+                <th className="w-[110px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("storeName")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    门店 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "storeName")}</span>
+                  </Link>
+                </th>
+                <th className="w-[100px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("createdBy")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    创建人 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "createdBy")}</span>
+                  </Link>
+                </th>
+                <th className="w-[165px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("createdAt")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    创建时间 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "createdAt")}</span>
+                  </Link>
+                </th>
+                <th className="w-[100px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("claimedBy")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    领取人 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "claimedBy")}</span>
+                  </Link>
+                </th>
+                <th className="w-[165px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("claimedAt")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    领取时间 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "claimedAt")}</span>
+                  </Link>
+                </th>
+                <th className="w-[100px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("convertedBy")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    转精准人 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "convertedBy")}</span>
+                  </Link>
+                </th>
+                <th className="w-[165px] px-3 py-2 font-semibold">
+                  <Link href={getSortHref("convertedAt")} className="inline-flex cursor-pointer items-center gap-1 hover:text-slate-900">
+                    转精准时间 <span className="text-xs text-slate-400">{getSortIcon(sortBy, sortDir, "convertedAt")}</span>
+                  </Link>
+                </th>
                 <th className="w-[160px] px-3 py-2 font-semibold">
                   操作
                 </th>
@@ -429,6 +678,7 @@ export default async function OrdersPage({
                       <span className="text-slate-300">-</span>
                     )}
                   </td>
+                  <td className="px-3 py-3 text-slate-600">{item.id}</td>
                   <td className="px-3 py-3">
                     <div className="truncate" title={item.title}>
                       {item.title}
@@ -465,6 +715,11 @@ export default async function OrdersPage({
                     )}
                   </td>
                   <td className="px-3 py-3">
+                    <div className="truncate" title={item.createdBy.store?.name || "-"}>
+                      {item.createdBy.store?.name || "-"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
                     <div className="truncate" title={item.createdBy.displayName || item.createdBy.username}>
                       {item.createdBy.displayName || item.createdBy.username}
                     </div>
@@ -485,17 +740,20 @@ export default async function OrdersPage({
                     </div>
                   </td>
                   <td className="px-3 py-3">
+                    <div className="truncate" title={item.convertedToPreciseBy?.displayName || "-"}>
+                      {item.convertedToPreciseBy?.displayName || "-"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    <div
+                      className="truncate"
+                      title={item.convertedToPreciseAt ? new Date(item.convertedToPreciseAt).toLocaleString("zh-CN") : "-"}
+                    >
+                      {item.convertedToPreciseAt ? new Date(item.convertedToPreciseAt).toLocaleString("zh-CN") : "-"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
                     <div className="flex gap-2 text-blue-600">
-                      {canAssign && item.status === "PENDING" ? (
-                        <OrderAssignModal
-                          orderId={item.id}
-                          users={mobileUsers}
-                          action={async (formData) => {
-                            "use server";
-                            await assignDispatchOrder(formData);
-                          }}
-                        />
-                      ) : null}
                       <Link href={`/dashboard/orders/${item.id}`}>详情</Link>
                       {item.status === "PENDING" && (isAdmin || item.createdById === Number(session.user.id)) ? (
                         <Link href={`/dashboard/orders/${item.id}/edit`}>编辑</Link>
@@ -514,7 +772,7 @@ export default async function OrdersPage({
               ))}
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={16} className="px-3 py-6 text-center text-slate-500">
                     暂无单据
                   </td>
                 </tr>
@@ -529,6 +787,13 @@ export default async function OrdersPage({
             <form className="inline-flex items-center gap-2">
               <input type="hidden" name="keyword" value={keyword} />
               <input type="hidden" name="status" value={status} />
+              <input type="hidden" name="district" value={district} />
+              <input type="hidden" name="town" value={town} />
+              <input type="hidden" name="createdById" value={createdByIdRaw} />
+              <input type="hidden" name="claimedById" value={claimedByIdRaw} />
+              <input type="hidden" name="convertedById" value={convertedByIdRaw} />
+              <input type="hidden" name="sortBy" value={sortBy} />
+              <input type="hidden" name="sortDir" value={sortDir} />
               <input type="hidden" name="page" value="1" />
               <select
                 name="pageSize"
@@ -587,3 +852,4 @@ export default async function OrdersPage({
     </section>
   );
 }
+

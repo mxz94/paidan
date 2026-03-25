@@ -72,11 +72,15 @@ async function ensureSchema() {
   await ensureColumn("User", `"longitude" REAL`);
   await ensureColumn("User", `"latitude" REAL`);
   await ensureColumn("User", `"locationAt" DATETIME`);
-  await ensureColumn("User", `"accessMode" TEXT NOT NULL DEFAULT 'BACKEND'`);
+  await ensureColumn("User", `"accessMode" TEXT NOT NULL DEFAULT 'SERVICE'`);
+  await ensureColumn("User", `"isDeleted" BOOLEAN NOT NULL DEFAULT false`);
+  await ensureColumn("User", `"isDisabled" BOOLEAN NOT NULL DEFAULT false`);
   await ensureColumn("User", `"tenantId" INTEGER`);
   await ensureColumn("User", `"storeId" INTEGER`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_tenantId_idx" ON "User"("tenantId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_storeId_idx" ON "User"("storeId");`);
+  await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
+  await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "RoleMenu" (
@@ -170,45 +174,89 @@ async function ensureSchema() {
       "tenantId" INTEGER NOT NULL,
       "name" TEXT NOT NULL,
       "managerUserId" INTEGER NOT NULL,
+      "isDeleted" BOOLEAN NOT NULL DEFAULT false,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  await ensureColumn("Store", `"isDeleted" BOOLEAN NOT NULL DEFAULT false`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_tenantId_idx" ON "Store"("tenantId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_managerUserId_idx" ON "Store"("managerUserId");`);
 }
 
 async function ensureTenantBuiltinRoles(tenantId, menus) {
   const adminCode = `TENANT_${tenantId}_ADMIN`;
-  const userCode = `TENANT_${tenantId}_USER`;
+  const supervisorCode = `TENANT_${tenantId}_SUPERVISOR`;
+  const serviceCode = `TENANT_${tenantId}_SERVICE`;
+  const saleCode = `TENANT_${tenantId}_SALE`;
 
   const adminRole = await prisma.role.upsert({
     where: { code: adminCode },
     create: { code: adminCode, name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
     update: { name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
-  const userRole = await prisma.role.upsert({
-    where: { code: userCode },
-    create: { code: userCode, name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
-    update: { name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
+  const legacyUserRole = await prisma.role.findUnique({
+    where: { code: `TENANT_${tenantId}_USER` },
+    select: { id: true },
+  });
+  const existedServiceRole = await prisma.role.findUnique({
+    where: { code: serviceCode },
+    select: { id: true },
+  });
+  if (legacyUserRole && existedServiceRole && legacyUserRole.id !== existedServiceRole.id) {
+    await prisma.user.updateMany({
+      where: { roleId: legacyUserRole.id },
+      data: { roleId: existedServiceRole.id },
+    });
+    await prisma.roleMenu.deleteMany({ where: { roleId: legacyUserRole.id } });
+    await prisma.role.delete({ where: { id: legacyUserRole.id } });
+  }
+  const serviceRole = legacyUserRole && !existedServiceRole
+    ? await prisma.role.update({
+        where: { id: legacyUserRole.id },
+        data: { code: serviceCode, name: "客服", tenantId, isBuiltin: true, dataScope: "OWN" },
+      })
+    : await prisma.role.upsert({
+        where: { code: serviceCode },
+        create: { code: serviceCode, name: "客服", tenantId, isBuiltin: true, dataScope: "OWN" },
+        update: { name: "客服", tenantId, isBuiltin: true, dataScope: "OWN" },
+      });
+  const supervisorRole = await prisma.role.upsert({
+    where: { code: supervisorCode },
+    create: { code: supervisorCode, name: "主管", tenantId, isBuiltin: true, dataScope: "STORE" },
+    update: { name: "主管", tenantId, isBuiltin: true, dataScope: "STORE" },
+  });
+  const saleRole = await prisma.role.upsert({
+    where: { code: saleCode },
+    create: { code: saleCode, name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
+    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
   });
 
-  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
-  const userKeys = ["dashboard", "dispatch-order"];
+  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-delete-btn"];
+  const supervisorKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "perm-order-delete-btn"];
+  const serviceKeys = ["dispatch-order"];
   const adminMenus = menus.filter((m) => adminKeys.includes(m.key));
-  const userMenus = menus.filter((m) => userKeys.includes(m.key));
+  const supervisorMenus = menus.filter((m) => supervisorKeys.includes(m.key));
+  const serviceMenus = menus.filter((m) => serviceKeys.includes(m.key));
 
   await prisma.roleMenu.deleteMany({ where: { roleId: adminRole.id } });
   if (adminMenus.length) {
     await prisma.roleMenu.createMany({ data: adminMenus.map((m) => ({ roleId: adminRole.id, menuId: m.id })) });
   }
 
-  await prisma.roleMenu.deleteMany({ where: { roleId: userRole.id } });
-  if (userMenus.length) {
-    await prisma.roleMenu.createMany({ data: userMenus.map((m) => ({ roleId: userRole.id, menuId: m.id })) });
+  await prisma.roleMenu.deleteMany({ where: { roleId: supervisorRole.id } });
+  if (supervisorMenus.length) {
+    await prisma.roleMenu.createMany({ data: supervisorMenus.map((m) => ({ roleId: supervisorRole.id, menuId: m.id })) });
   }
 
-  return { adminRole, userRole };
+  await prisma.roleMenu.deleteMany({ where: { roleId: serviceRole.id } });
+  if (serviceMenus.length) {
+    await prisma.roleMenu.createMany({ data: serviceMenus.map((m) => ({ roleId: serviceRole.id, menuId: m.id })) });
+  }
+
+  await prisma.roleMenu.deleteMany({ where: { roleId: saleRole.id } });
+
+  return { adminRole, supervisorRole, serviceRole, saleRole };
 }
 
 async function main() {
@@ -237,7 +285,6 @@ async function main() {
   const menus = [
     { key: "dashboard", name: "仪表盘", path: "/dashboard", icon: "home", sort: 1 },
     { key: "dispatch-order", name: "单据管理", path: "/dashboard/orders", icon: "send", sort: 2 },
-    { key: "perm-order-dispatch-assign", name: "单据管理-派单按钮", path: "#", icon: "key", sort: 201 },
     { key: "perm-order-delete-btn", name: "单据管理-删除按钮", path: "#", icon: "key", sort: 202 },
     { key: "user-manage", name: "用户管理", path: "/dashboard/users", icon: "users", sort: 3 },
     { key: "package-manage", name: "套餐管理", path: "/dashboard/packages", icon: "box", sort: 4 },
@@ -254,9 +301,18 @@ async function main() {
   const dispatchOrderMenu = await prisma.menu.findUnique({ where: { key: "dispatch-order" }, select: { id: true } });
   if (dispatchOrderMenu) {
     await prisma.menu.updateMany({
-      where: { key: { in: ["perm-order-dispatch-assign", "perm-order-delete-btn"] } },
+      where: { key: { in: ["perm-order-delete-btn"] } },
       data: { parentId: dispatchOrderMenu.id },
     });
+  }
+
+  const legacyAssignMenu = await prisma.menu.findUnique({
+    where: { key: "perm-order-dispatch-assign" },
+    select: { id: true },
+  });
+  if (legacyAssignMenu) {
+    await prisma.roleMenu.deleteMany({ where: { menuId: legacyAssignMenu.id } });
+    await prisma.menu.delete({ where: { id: legacyAssignMenu.id } });
   }
 
   const allMenus = await prisma.menu.findMany({ orderBy: { sort: "asc" } });
@@ -280,14 +336,14 @@ async function main() {
       username: "root",
       passwordHash: superHash,
       displayName: "平台超管",
-      accessMode: "BACKEND",
+      accessMode: "SUPERVISOR",
       roleId: superRole.id,
       tenantId: null,
     },
     update: {
       passwordHash: superHash,
       displayName: "平台超管",
-      accessMode: "BACKEND",
+      accessMode: "SUPERVISOR",
       roleId: superRole.id,
       tenantId: null,
     },
@@ -305,14 +361,14 @@ async function main() {
           username: "admin",
           passwordHash: adminPasswordHash,
           displayName: "系统管理员",
-          accessMode: "BACKEND",
+          accessMode: "SUPERVISOR",
           roleId: adminRole.id,
           tenantId: tenant.id,
         },
         update: {
           passwordHash: adminPasswordHash,
           displayName: "系统管理员",
-          accessMode: "BACKEND",
+          accessMode: "SUPERVISOR",
           roleId: adminRole.id,
           tenantId: tenant.id,
         },

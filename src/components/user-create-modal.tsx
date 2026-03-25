@@ -18,8 +18,10 @@ type Props = {
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function UserCreateModal({ roles, stores, action }: Props) {
+export function UserCreateModal({ roles = [], stores = [], action }: Props) {
   const [open, setOpen] = useState(false);
+  const safeRoles = Array.isArray(roles) ? roles : [];
+  const safeStores = Array.isArray(stores) ? stores : [];
 
   return (
     <>
@@ -86,10 +88,13 @@ export function UserCreateModal({ roles, stores, action }: Props) {
                   <select
                     name="roleId"
                     required
-                    defaultValue={roles[0]?.id ?? ""}
+                    defaultValue=""
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   >
-                    {roles.map((role) => (
+                    <option value="" disabled>
+                      请选择角色
+                    </option>
+                    {safeRoles.map((role) => (
                       <option key={role.id} value={role.id}>
                         {role.name}
                       </option>
@@ -102,11 +107,17 @@ export function UserCreateModal({ roles, stores, action }: Props) {
                   <select
                     name="storeId"
                     required
-                    defaultValue={stores[0]?.id ?? ""}
+                    defaultValue=""
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   >
-                    {stores.length === 0 ? <option value="">暂无门店，请先去门店管理新增</option> : null}
-                    {stores.map((store) => (
+                    {safeStores.length === 0 ? (
+                      <option value="">暂无门店，请先去门店管理新增</option>
+                    ) : (
+                      <option value="" disabled>
+                        请选择门店
+                      </option>
+                    )}
+                    {safeStores.map((store) => (
                       <option key={store.id} value={store.id}>
                         {store.name}
                       </option>
@@ -115,14 +126,19 @@ export function UserCreateModal({ roles, stores, action }: Props) {
                 </label>
 
                 <label className="block">
-                  <span className="mb-1 block text-sm text-slate-600">登录端类型</span>
+                  <span className="mb-1 block text-sm text-slate-600">用户类型</span>
                   <select
-                    name="accessMode"
-                    defaultValue="BACKEND"
+                    name="userType"
+                    required
+                    defaultValue=""
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   >
-                    <option value="BACKEND">后台端</option>
-                    <option value="MOBILE">移动端</option>
+                    <option value="" disabled>
+                      请选择用户类型
+                    </option>
+                    <option value="SUPERVISOR">主管</option>
+                    <option value="SERVICE">客服</option>
+                    <option value="SALE">业务员</option>
                   </select>
                 </label>
               </div>
@@ -132,7 +148,7 @@ export function UserCreateModal({ roles, stores, action }: Props) {
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={stores.length === 0}
+                  disabled={safeStores.length === 0 || safeRoles.length === 0}
                   className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
                   创建用户

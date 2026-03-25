@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -10,13 +10,11 @@ import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 
 const createStoreSchema = z.object({
   name: z.string().trim().min(1).max(40),
-  managerUserId: z.coerce.number().int().positive(),
 });
 
 const updateStoreSchema = z.object({
   storeId: z.coerce.number().int().positive(),
   name: z.string().trim().min(1).max(40),
-  managerUserId: z.coerce.number().int().positive(),
 });
 
 const deleteStoreSchema = z.object({
@@ -41,28 +39,16 @@ export async function createStore(formData: FormData) {
 
   const parsed = createStoreSchema.safeParse({
     name: formData.get("name"),
-    managerUserId: formData.get("managerUserId"),
   });
   if (!parsed.success) {
     redirect("/dashboard/stores?err=invalid");
-  }
-
-  const manager = await prisma.user.findFirst({
-    where: {
-      id: parsed.data.managerUserId,
-      tenantId: Number(me.tenantId),
-      accessMode: "BACKEND",
-    },
-    select: { id: true },
-  });
-  if (!manager) {
-    redirect("/dashboard/stores?err=manager");
   }
 
   const exists = await prisma.store.findFirst({
     where: {
       tenantId: Number(me.tenantId),
       name: parsed.data.name,
+      isDeleted: false,
     },
     select: { id: true },
   });
@@ -74,7 +60,7 @@ export async function createStore(formData: FormData) {
     data: {
       tenantId: Number(me.tenantId),
       name: parsed.data.name,
-      managerUserId: parsed.data.managerUserId,
+      managerUserId: Number(me.id),
     },
   });
 
@@ -90,30 +76,17 @@ export async function updateStore(formData: FormData) {
   const parsed = updateStoreSchema.safeParse({
     storeId: formData.get("storeId"),
     name: formData.get("name"),
-    managerUserId: formData.get("managerUserId"),
   });
   if (!parsed.success) {
     redirect("/dashboard/stores?err=invalid");
   }
 
   const store = await prisma.store.findFirst({
-    where: { id: parsed.data.storeId, tenantId: Number(me.tenantId) },
+    where: { id: parsed.data.storeId, tenantId: Number(me.tenantId), isDeleted: false },
     select: { id: true },
   });
   if (!store) {
     redirect("/dashboard/stores?err=notfound");
-  }
-
-  const manager = await prisma.user.findFirst({
-    where: {
-      id: parsed.data.managerUserId,
-      tenantId: Number(me.tenantId),
-      accessMode: "BACKEND",
-    },
-    select: { id: true },
-  });
-  if (!manager) {
-    redirect("/dashboard/stores?err=manager");
   }
 
   const exists = await prisma.store.findFirst({
@@ -121,6 +94,7 @@ export async function updateStore(formData: FormData) {
       tenantId: Number(me.tenantId),
       name: parsed.data.name,
       id: { not: parsed.data.storeId },
+      isDeleted: false,
     },
     select: { id: true },
   });
@@ -132,7 +106,6 @@ export async function updateStore(formData: FormData) {
     where: { id: parsed.data.storeId },
     data: {
       name: parsed.data.name,
-      managerUserId: parsed.data.managerUserId,
     },
   });
 
@@ -151,11 +124,24 @@ export async function deleteStore(formData: FormData) {
     redirect("/dashboard/stores?err=invalid");
   }
 
-  const deleted = await prisma.store.deleteMany({
+  const memberCount = await prisma.user.count({
+    where: {
+      tenantId: Number(me.tenantId),
+      storeId: parsed.data.storeId,
+      isDeleted: false,
+    },
+  });
+  if (memberCount > 0) {
+    redirect("/dashboard/stores?err=has_users");
+  }
+
+  const deleted = await prisma.store.updateMany({
     where: {
       id: parsed.data.storeId,
       tenantId: Number(me.tenantId),
+      isDeleted: false,
     },
+    data: { isDeleted: true },
   });
   if (deleted.count <= 0) {
     redirect("/dashboard/stores?err=notfound");
@@ -164,3 +150,4 @@ export async function deleteStore(formData: FormData) {
   revalidatePath("/dashboard/stores");
   redirect("/dashboard/stores?deleted=1");
 }
+

@@ -5,9 +5,7 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, hasTenantDataScope } from "@/lib/tenant";
-import { OrderAppendRecordModal } from "@/components/order-append-record-modal";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
-import { appendDispatchOrderRecordByBackend } from "../actions";
 
 type Params = Promise<{ id: string }>;
 
@@ -16,8 +14,8 @@ type SearchParams = Promise<{ updated?: string; op?: string }>;
 const statusLabel: Record<string, string> = {
   PENDING: "未领取",
   CLAIMED: "已领取",
-  DONE: "已完结",
-  ENDED: "结束",
+  DONE: "已办理",
+  ENDED: "不办理",
 };
 
 const statusClass: Record<string, string> = {
@@ -30,8 +28,8 @@ const statusClass: Record<string, string> = {
 const actionLabel: Record<string, string> = {
   CLAIM: "领取",
   APPEND: "追加",
-  FINISH: "完结",
-  END: "结束",
+  FINISH: "已办理",
+  END: "不办理",
   RESCHEDULE: "改约",
   RETURN: "退回",
   CONVERT_PRECISE: "转精准",
@@ -108,6 +106,7 @@ export default async function OrderDetailPage({
     { label: "套餐", value: order.package ? `${order.package.name} (${order.package.code})` : "-" },
     { label: "手机号", value: order.phone || "-" },
     { label: "客户办理号码", value: order.handledPhone || "-" },
+    { label: "不办理原因", value: (order as { notHandledReason?: string | null }).notHandledReason || "-" },
     { label: "客户类型", value: order.customerType || "-" },
     { label: "约定时间", value: order.appointmentAt ? new Date(order.appointmentAt).toLocaleString("zh-CN") : "-" },
     {
@@ -160,7 +159,6 @@ export default async function OrderDetailPage({
             >
               返回列表
             </Link>
-            <OrderAppendRecordModal orderId={order.id} action={appendDispatchOrderRecordByBackend} />
             {canEdit ? (
               <Link
                 href={`/dashboard/orders/${order.id}/edit`}

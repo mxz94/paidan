@@ -25,7 +25,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Sear
     <section className="space-y-6">
       <header className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-2xl font-bold">租户管理</h1>
-        <p className="mt-2 text-sm text-slate-600">仅平台超管可维护租户。新增租户自动创建本租户的管理员角色、普通用户角色和管理员账号（默认密码 123456）。</p>
+        <p className="mt-2 text-sm text-slate-600">仅平台超管可维护租户。新增租户自动创建默认角色：管理员（租户）、主管（门店）、客服（个人，仅单据菜单）、业务员（无后台菜单）和管理员账号（默认密码 123456）。</p>
         {params.created === "1" ? (
           <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
             租户创建成功：{params.name || "-"}，管理员账号：{params.username || "-"}

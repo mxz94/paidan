@@ -1,7 +1,8 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
+import { composeRegionValue, getLuoyangTowns, type LuoyangRegionNode } from "@/lib/regions";
 
 type PackageOption = {
   id: number;
@@ -13,17 +14,95 @@ type PackageOption = {
 type Props = {
   packages: PackageOption[];
   customerTypes: string[];
-  regions: string[];
+  regionTree: LuoyangRegionNode[];
+  currentAccessMode: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function OrderCreateModal({ packages, customerTypes, regions, action }: Props) {
+export function OrderCreateModal({ packages, customerTypes, regionTree, currentAccessMode, action }: Props) {
   const [open, setOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [longitude, setLongitude] = useState("");
   const [latitude, setLatitude] = useState("");
+  const [district, setDistrict] = useState("");
+  const [town, setTown] = useState("");
+  const [addressTips, setAddressTips] = useState<Array<{ name: string; address: string; longitude?: number; latitude?: number }>>([]);
+  const [showAddressTips, setShowAddressTips] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   const defaultTitle = "";
+  const isServiceUser = currentAccessMode === "SERVICE";
+  const towns = getLuoyangTowns(district);
+  const regionValue = composeRegionValue(district, town);
+  const amapWebKey = process.env.NEXT_PUBLIC_AMAP_KEY ?? "";
+  const nowLocal = new Date();
+  const toLocalInput = (value: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+  };
+  const minAppointmentAt = toLocalInput(nowLocal);
+  const maxAppointmentAt = toLocalInput(new Date(nowLocal.getTime() + 15 * 24 * 60 * 60 * 1000));
+  const addressSearchSeed = useMemo(() => {
+    const prefix = regionValue.trim();
+    const addr = address.trim();
+    if (prefix && addr) return `${prefix} ${addr}`;
+    return prefix || addr;
+  }, [address, regionValue]);
+
+  useEffect(() => {
+    const keyword = addressSearchSeed.trim();
+    if (!keyword || !amapWebKey) {
+      setAddressTips([]);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({
+          key: amapWebKey,
+          keywords: keyword,
+          city: "洛阳",
+          citylimit: "true",
+          datatype: "all",
+        });
+        const resp = await fetch(`https://restapi.amap.com/v3/assistant/inputtips?${query.toString()}`, {
+          cache: "no-store",
+        });
+        if (!resp.ok) {
+          setAddressTips([]);
+          return;
+        }
+        const json = (await resp.json()) as {
+          status?: string;
+          tips?: Array<{ name?: string; district?: string; address?: string; location?: string }>;
+        };
+        if (json.status !== "1" || !json.tips?.length) {
+          setAddressTips([]);
+          return;
+        }
+        const tips = json.tips
+          .filter((tip) => (tip.name || "").trim())
+          .slice(0, 8)
+          .map((tip) => {
+            const locationText = String(tip.location ?? "");
+            const [lngText, latText] = locationText.split(",");
+            const lng = Number(lngText);
+            const lat = Number(latText);
+            return {
+              name: String(tip.name ?? "").trim(),
+              address: `${String(tip.district ?? "").trim()}${String(tip.address ?? "").trim()}`.trim(),
+              longitude: Number.isFinite(lng) ? lng : undefined,
+              latitude: Number.isFinite(lat) ? lat : undefined,
+            };
+          });
+        setAddressTips(tips);
+      } catch {
+        setAddressTips([]);
+      }
+    }, 240);
+
+    return () => window.clearTimeout(timer);
+  }, [addressSearchSeed, amapWebKey]);
 
   return (
     <>
@@ -49,9 +128,29 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
               </button>
             </div>
 
-            <form action={action} className="grid gap-4">
+            <form
+              action={action}
+              className="grid gap-4"
+              onSubmit={(event) => {
+                const data = new FormData(event.currentTarget);
+                const title = String(data.get("title") ?? "").trim();
+                const region = String(data.get("region") ?? "").trim();
+                const addr = String(data.get("address") ?? "").trim();
+                const phone = String(data.get("phone") ?? "").trim();
+                const customerType = isServiceUser ? "客服" : String(data.get("customerType") ?? "").trim();
+
+                if (!title || !region || !addr || !customerType || !phone) {
+                  event.preventDefault();
+                  setSubmitError("请先完善必填项：标题、区域、地址、手机号、客户类型。");
+                  return;
+                }
+                setSubmitError("");
+              }}
+            >
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
-                <span className="text-sm font-medium text-slate-700">标题</span>
+                <span className="text-sm font-medium text-slate-700">
+                  标题 <span className="text-rose-500">*</span>
+                </span>
                 <div>
                   <input
                     name="title"
@@ -70,36 +169,94 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                 </div>
               </label>
 
-              <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
-                <span className="text-sm font-medium text-slate-700">区域</span>
-                <select
-                  name="region"
-                  required
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                >
-                  <option value="">请选择区域</option>
-                  {regions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
+              <input type="hidden" name="region" value={regionValue} />
+              <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-start">
+                <span className="text-sm font-medium text-slate-700">
+                  区域 <span className="text-rose-500">*</span>
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select
+                    required
+                    value={district}
+                    onChange={(event) => {
+                      setDistrict(event.currentTarget.value);
+                      setTown("");
+                    }}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="">请选择区/县</option>
+                    {regionTree.map((item) => (
+                      <option key={item.district} value={item.district}>
+                        {item.district}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={town}
+                    onChange={(event) => setTown(event.currentTarget.value)}
+                    disabled={!district}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    <option value="">请选择镇/街道（可选）</option>
+                    {towns.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </label>
 
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
-                <span className="text-sm font-medium text-slate-700">地址</span>
-                <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-700">
+                  地址 <span className="text-rose-500">*</span>
+                </span>
+                <div className="relative flex items-center gap-2">
+                  <div className="relative w-full">
                   <input
                     name="address"
-                    value={address}
-                    onChange={(event) => setAddress(event.currentTarget.value)}
-                    required
-                    placeholder="请输入地址，可点击右侧地图图标查询"
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                  />
+                      value={address}
+                      onChange={(event) => {
+                        setAddress(event.currentTarget.value);
+                        setShowAddressTips(true);
+                      }}
+                      onFocus={() => setShowAddressTips(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => setShowAddressTips(false), 120);
+                      }}
+                      required
+                      placeholder="请输入地址，可点击右侧地图图标查询"
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                    />
+                    {showAddressTips && addressTips.length > 0 ? (
+                      <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                        {addressTips.map((tip, index) => (
+                          <button
+                            key={`${tip.name}-${tip.address}-${index}`}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              const pickedAddress = `${tip.name}${tip.address}`.trim() || tip.name;
+                              setAddress(pickedAddress);
+                              if (tip.longitude != null && tip.latitude != null) {
+                                setLongitude(String(tip.longitude.toFixed(6)));
+                                setLatitude(String(tip.latitude.toFixed(6)));
+                              }
+                              setShowAddressTips(false);
+                            }}
+                            className="block w-full border-b border-slate-100 px-3 py-2 text-left text-xs text-slate-700 last:border-b-0 hover:bg-slate-50"
+                          >
+                            <p className="font-semibold text-slate-800">{tip.name}</p>
+                            <p className="mt-0.5 text-slate-500">{tip.address || "无详细地址"}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <AmapPickerModal
                     iconOnly
-                    initialAddress={address}
+                    autoSearchOnOpen
+                    initialAddress={addressSearchSeed}
                     initialLongitude={longitude ? Number(longitude) : undefined}
                     initialLatitude={latitude ? Number(latitude) : undefined}
                     onConfirm={(picked) => {
@@ -115,23 +272,34 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
               <input type="hidden" name="latitude" value={latitude} />
 
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
-                <span className="text-sm font-medium text-slate-700">手机号</span>
+                <span className="text-sm font-medium text-slate-700">
+                  手机号 <span className="text-rose-500">*</span>
+                </span>
                 <input
                   name="phone"
                   required
+                  pattern="1[0-9]{10}"
+                  maxLength={11}
+                  inputMode="numeric"
+                  title="请与请求的格式匹配"
                   placeholder="请输入手机号"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </label>
 
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-center">
-                <span className="text-sm font-medium text-slate-700">客户类型</span>
+                <span className="text-sm font-medium text-slate-700">
+                  客户类型 <span className="text-rose-500">*</span>
+                </span>
+                {isServiceUser ? <input type="hidden" name="customerType" value="客服" /> : null}
                 <select
                   name="customerType"
                   required
+                  defaultValue={isServiceUser ? "客服" : ""}
+                  disabled={isServiceUser}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 >
-                  <option value="">请选择客户类型</option>
+                  {isServiceUser ? null : <option value="">请选择客户类型</option>}
                   {customerTypes.map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -139,6 +307,9 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                   ))}
                 </select>
               </label>
+              {submitError ? (
+                <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{submitError}</p>
+              ) : null}
 
               <label className="grid gap-2 sm:grid-cols-[88px,1fr] sm:items-start">
                 <span className="pt-2 text-sm font-medium text-slate-700">单据备注</span>
@@ -156,6 +327,8 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                 <input
                   name="appointmentAt"
                   type="datetime-local"
+                  min={minAppointmentAt}
+                  max={maxAppointmentAt}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
               </label>
@@ -166,7 +339,6 @@ export function OrderCreateModal({ packages, customerTypes, regions, action }: P
                   <input
                     name="photo"
                     type="file"
-                    required
                     accept="image/*"
                     className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white"
                   />

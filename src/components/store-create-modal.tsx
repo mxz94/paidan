@@ -1,18 +1,12 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 
-type ManagerOption = {
-  id: number;
-  label: string;
-};
-
 type Props = {
-  managers: ManagerOption[];
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function StoreCreateModal({ managers, action }: Props) {
+export function StoreCreateModal({ action }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -51,27 +45,9 @@ export function StoreCreateModal({ managers, action }: Props) {
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-1 block text-sm text-slate-600">门店主管</span>
-                <select
-                  name="managerUserId"
-                  required
-                  defaultValue={managers[0]?.id ?? ""}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                >
-                  {managers.length === 0 ? <option value="">暂无可选后台用户</option> : null}
-                  {managers.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={managers.length === 0}
                   className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                 >
                   创建门店

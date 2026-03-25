@@ -47,11 +47,12 @@ export default async function NewRolePage({
             <span className="mb-1.5 block text-sm font-medium text-slate-700">数据权限</span>
             <select
               name="dataScope"
-              defaultValue="OWN"
+              defaultValue="TENANT"
               className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
             >
-              <option value="OWN">仅自己的</option>
-              <option value="TENANT">整个租户</option>
+              <option value="TENANT">租户</option>
+              <option value="STORE">门店</option>
+              <option value="OWN">个人</option>
             </select>
           </label>
 

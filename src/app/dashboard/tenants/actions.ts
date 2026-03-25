@@ -18,14 +18,28 @@ async function ensureTenantBuiltinRoles(tenantId: number) {
     create: { code: `TENANT_${tenantId}_ADMIN`, name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
     update: { name: "管理员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
-  await prisma.role.upsert({
-    where: { code: `TENANT_${tenantId}_USER` },
-    create: { code: `TENANT_${tenantId}_USER`, name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
-    update: { name: "普通用户", tenantId, isBuiltin: true, dataScope: "OWN" },
+  const supervisorRole = await prisma.role.upsert({
+    where: { code: `TENANT_${tenantId}_SUPERVISOR` },
+    create: { code: `TENANT_${tenantId}_SUPERVISOR`, name: "主管", tenantId, isBuiltin: true, dataScope: "STORE" },
+    update: { name: "主管", tenantId, isBuiltin: true, dataScope: "STORE" },
+  });
+  const serviceRole = await prisma.role.upsert({
+    where: { code: `TENANT_${tenantId}_SERVICE` },
+    create: { code: `TENANT_${tenantId}_SERVICE`, name: "客服", tenantId, isBuiltin: true, dataScope: "OWN" },
+    update: { name: "客服", tenantId, isBuiltin: true, dataScope: "OWN" },
+  });
+  const saleRole = await prisma.role.upsert({
+    where: { code: `TENANT_${tenantId}_SALE` },
+    create: { code: `TENANT_${tenantId}_SALE`, name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
+    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
   });
 
-  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-dispatch-assign", "perm-order-delete-btn"];
+  const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-delete-btn"];
+  const supervisorKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "perm-order-delete-btn"];
+  const serviceKeys = ["dispatch-order"];
   const adminMenus = allMenus.filter((m) => adminKeys.includes(m.key));
+  const supervisorMenus = allMenus.filter((m) => supervisorKeys.includes(m.key));
+  const serviceMenus = allMenus.filter((m) => serviceKeys.includes(m.key));
 
   await prisma.roleMenu.deleteMany({ where: { roleId: adminRole.id } });
   if (adminMenus.length > 0) {
@@ -33,6 +47,19 @@ async function ensureTenantBuiltinRoles(tenantId: number) {
       data: adminMenus.map((menu) => ({ roleId: adminRole.id, menuId: menu.id })),
     });
   }
+  await prisma.roleMenu.deleteMany({ where: { roleId: supervisorRole.id } });
+  if (supervisorMenus.length > 0) {
+    await prisma.roleMenu.createMany({
+      data: supervisorMenus.map((menu) => ({ roleId: supervisorRole.id, menuId: menu.id })),
+    });
+  }
+  await prisma.roleMenu.deleteMany({ where: { roleId: serviceRole.id } });
+  if (serviceMenus.length > 0) {
+    await prisma.roleMenu.createMany({
+      data: serviceMenus.map((menu) => ({ roleId: serviceRole.id, menuId: menu.id })),
+    });
+  }
+  await prisma.roleMenu.deleteMany({ where: { roleId: saleRole.id } });
 
   return adminRole;
 }
@@ -80,7 +107,7 @@ export async function createTenant(formData: FormData) {
       username,
       displayName: `${tenant.name}管理员`,
       passwordHash,
-      accessMode: "BACKEND",
+      accessMode: "SUPERVISOR",
       roleId: adminRole.id,
       tenantId: tenant.id,
     },
@@ -113,3 +140,4 @@ export async function toggleTenantActive(formData: FormData) {
   revalidatePath("/dashboard/tenants");
   redirect("/dashboard/tenants?toggled=1");
 }
+

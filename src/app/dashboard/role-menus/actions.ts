@@ -24,16 +24,16 @@ export async function saveRoleMenus(formData: FormData) {
 
   const targetRole = await prisma.role.findFirst({
     where: { id: roleId, tenantId: Number(me.tenantId) },
-    select: { id: true, isBuiltin: true },
+    select: { id: true },
   });
-  if (!targetRole || targetRole.isBuiltin) {
-    redirect("/dashboard/role-menus?err=forbidden");
+  if (!targetRole) {
+    redirect("/dashboard/role-menus?err=invalid_role");
   }
 
   await prisma.$transaction(async (tx) => {
     await tx.role.update({
       where: { id: roleId },
-      data: { dataScope: dataScope === "TENANT" ? "TENANT" : "OWN" },
+      data: { dataScope: dataScope === "TENANT" || dataScope === "STORE" ? dataScope : "OWN" },
     });
     await tx.roleMenu.deleteMany({ where: { roleId } });
 

@@ -35,7 +35,7 @@ export function UserImportModal({ action }: Props) {
 
             <form action={action} className="space-y-4">
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                支持 xlsx/csv。表头：用户名、姓名、密码、角色、登录端。角色仅支持“角色名称”匹配；登录端支持“后台端/移动端”或 BACKEND/MOBILE。单次最多 500 条。
+                支持 xlsx/csv。表头：用户名、姓名、密码、角色、用户类型、门店。角色和门店均按“名称”匹配；用户类型仅支持“主管/客服/业务员”。单次最多 500 条。
               </p>
               <a
                 href="/dashboard/users/template"

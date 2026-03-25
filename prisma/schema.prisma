@@ -17,7 +17,9 @@ model User {
   username     String   @unique
   passwordHash String
   displayName  String
-  accessMode   String   @default("BACKEND")
+  accessMode   String   @default("SERVICE")
+  isDeleted    Boolean  @default(false)
+  isDisabled   Boolean  @default(false)
   tenantId     Int?
   roleId       Int
   storeId      Int?
@@ -98,6 +100,7 @@ model DispatchOrder {
   remark        String?
   appointmentAt DateTime?
   handledPhone  String?
+  notHandledReason String?
   photoUrl      String?
   isDeleted     Boolean  @default(false)
   status        String   @default("PENDING")
@@ -153,6 +156,7 @@ model Store {
   tenantId       Int
   name           String
   managerUserId  Int
+  isDeleted      Boolean  @default(false)
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   manager        User     @relation("StoreManager", fields: [managerUserId], references: [id], onDelete: Restrict)
   users          User[]   @relation("StoreMembers")

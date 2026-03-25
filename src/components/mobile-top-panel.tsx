@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { MobileGpsSyncButton } from "@/components/mobile-gps-sync-button";
 import { MobileOrdersMapModal } from "@/components/mobile-orders-map-modal";
@@ -20,6 +21,7 @@ type Props = {
   claimed?: string;
   opText?: string;
   opClassName?: string;
+  profileHref: string;
 };
 
 const STORAGE_KEY = "mobile_top_panel_expanded";
@@ -32,6 +34,7 @@ export function MobileTopPanel({
   claimed,
   opText,
   opClassName,
+  profileHref,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [ready, setReady] = useState(false);
@@ -69,7 +72,19 @@ export function MobileTopPanel({
             </div>
             <div className="flex flex-col items-end gap-1.5">
               <MobileGpsSyncButton />
-              <MobileOrdersMapModal myLongitude={longitude} myLatitude={latitude} orders={orders} />
+              <div className="flex items-center gap-1.5">
+                <MobileOrdersMapModal myLongitude={longitude} myLatitude={latitude} orders={orders} />
+                <Link
+                  href={profileHref}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm"
+                  title="个人中心"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 21a8 8 0 1 0-16 0" />
+                    <circle cx="12" cy="8" r="4" />
+                  </svg>
+                </Link>
+              </div>
             </div>
           </div>
 

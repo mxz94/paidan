@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -40,6 +40,7 @@ function loadAmapScript() {
       reject(new Error("缺少高德地图配置"));
       return;
     }
+
     window._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY_JS_CODE };
 
     const existed = document.getElementById("amap-jsapi");
@@ -59,14 +60,14 @@ function loadAmapScript() {
   });
 }
 
-export function UserLocationsMapModal({ users }: Props) {
+export function UserLocationsMapModal({ users = [] }: Props) {
   const [open, setOpen] = useState(false);
   const [errorText, setErrorText] = useState("");
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
 
   const locatedUsers = useMemo(
-    () => users.filter((item) => item.longitude != null && item.latitude != null),
+    () => (users ?? []).filter((item) => item.longitude != null && item.latitude != null),
     [users],
   );
 
@@ -81,9 +82,10 @@ export function UserLocationsMapModal({ users }: Props) {
         await loadAmapScript();
         if (canceled || !window.AMap || !mapContainerRef.current) return;
 
-        const defaultCenter =
-          locatedUsers.length > 0
-            ? [locatedUsers[0].longitude, locatedUsers[0].latitude]
+        const firstLocated = locatedUsers.at(0);
+        const defaultCenter: [number, number] =
+          firstLocated && firstLocated.longitude != null && firstLocated.latitude != null
+            ? [firstLocated.longitude, firstLocated.latitude]
             : [112.453926, 34.619683];
 
         const map = new window.AMap.Map(mapContainerRef.current, {
@@ -93,6 +95,8 @@ export function UserLocationsMapModal({ users }: Props) {
         mapRef.current = map;
 
         locatedUsers.forEach((user) => {
+          if (user.longitude == null || user.latitude == null) return;
+
           const marker = new window.AMap.Marker({
             map,
             position: [user.longitude, user.latitude],
@@ -100,7 +104,7 @@ export function UserLocationsMapModal({ users }: Props) {
           });
 
           const infoWindow = new window.AMap.InfoWindow({
-            content: `${user.displayName} (${user.username})<br/>${user.longitude?.toFixed(6)}, ${user.latitude?.toFixed(6)}`,
+            content: `${user.displayName} (${user.username})<br/>${user.longitude.toFixed(6)}, ${user.latitude.toFixed(6)}`,
             offset: new window.AMap.Pixel(0, -28),
           });
 
@@ -152,7 +156,9 @@ export function UserLocationsMapModal({ users }: Props) {
             {errorText ? (
               <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{errorText}</p>
             ) : null}
+
             <div ref={mapContainerRef} className="h-[480px] w-full rounded-xl border border-slate-200" />
+
             <p className="mt-2 text-xs text-slate-500">
               共 {users.length} 个用户，已定位 {locatedUsers.length} 个。
             </p>
@@ -162,4 +168,3 @@ export function UserLocationsMapModal({ users }: Props) {
     </>
   );
 }
-

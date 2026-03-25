@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { canAccessDashboard, canAccessMobile, normalizeAccessMode } from "@/lib/user-access";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -33,6 +34,9 @@ export const authOptions: NextAuthOptions = {
         if (!user) {
           return null;
         }
+        if (user.isDeleted || user.isDisabled) {
+          return null;
+        }
 
         const isValid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!isValid) {
@@ -40,6 +44,10 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (user.role.code !== "SUPER_ADMIN" && (!user.tenantId || !user.tenant?.isActive)) {
+          return null;
+        }
+        const accessMode = normalizeAccessMode(user.accessMode);
+        if (!canAccessDashboard(accessMode) && !canAccessMobile(accessMode)) {
           return null;
         }
 
@@ -50,7 +58,8 @@ export const authOptions: NextAuthOptions = {
           roleCode: user.role.code,
           roleName: user.role.name,
           roleDataScope: user.role.dataScope ?? "TENANT",
-          accessMode: user.accessMode,
+          accessMode,
+          loginTarget: "auto",
           tenantId: user.tenantId ? String(user.tenantId) : "",
           tenantCode: user.tenant?.code ?? "",
         };
@@ -66,6 +75,7 @@ export const authOptions: NextAuthOptions = {
         token.roleDataScope = user.roleDataScope;
         token.username = user.username;
         token.accessMode = user.accessMode;
+        token.loginTarget = user.loginTarget;
         token.tenantId = user.tenantId;
         token.tenantCode = user.tenantCode;
       }
@@ -78,7 +88,8 @@ export const authOptions: NextAuthOptions = {
         session.user.roleName = String(token.roleName ?? "");
         session.user.roleDataScope = String(token.roleDataScope ?? "TENANT");
         session.user.username = String(token.username ?? "");
-        session.user.accessMode = String(token.accessMode ?? "BACKEND");
+        session.user.accessMode = String(token.accessMode ?? "SERVICE");
+        session.user.loginTarget = String(token.loginTarget ?? "auto");
         session.user.tenantId = String(token.tenantId ?? "");
         session.user.tenantCode = String(token.tenantCode ?? "");
       }

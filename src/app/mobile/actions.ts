@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
@@ -10,13 +11,32 @@ import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 
 const DEFAULT_PRECISE_DAILY_LIMIT = 3;
 const DEFAULT_SERVICE_DAILY_LIMIT = 20;
-const PRECISE_FINISH_RADIUS_KM = 2;
+const END_REASON_OPTIONS = ["无效客资", "未见面", "已见面"] as const;
 const GEOCODE_MIN_INTERVAL_MS = 220;
 const GEOCODE_MAX_RETRY = 2;
+const APPOINTMENT_MAX_DAYS = 15;
+
+function normalizeMobilePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("86")) {
+    return digits.slice(2);
+  }
+  return digits;
+}
+
+function normalizeNotHandledReason(value: string) {
+  return value.replace(/\s+/g, "").replace(/[\u3000]/g, "");
+}
 
 async function getOperatorTenantId(operatorId: number) {
-  const user = await prisma.user.findUnique({ where: { id: operatorId }, select: { tenantId: true } });
-  return user?.tenantId ?? null;
+  const user = await prisma.user.findUnique({
+    where: { id: operatorId },
+    select: { tenantId: true, isDeleted: true, isDisabled: true },
+  });
+  if (!user || user.isDeleted || user.isDisabled) {
+    return null;
+  }
+  return user.tenantId ?? null;
 }
 
 async function getOperatorLocationSnapshot(operatorId: number) {
@@ -30,21 +50,13 @@ async function getOperatorLocationSnapshot(operatorId: number) {
   };
 }
 
-function calcDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
 function buildMobileQuery(formData: FormData, nextTab: "new" | "doing" | "done", extra?: Record<string, string>) {
   const search = new URLSearchParams();
   search.set("tab", nextTab);
+  const district = String(formData.get("district") ?? "").trim();
+  if (district) {
+    search.set("district", district);
+  }
   const region = String(formData.get("region") ?? "").trim();
   if (region) {
     search.set("region", region);
@@ -69,6 +81,13 @@ function createGeocodeThrottle(minIntervalMs: number) {
     if (wait > 0) await sleep(wait);
     lastAt = Date.now();
   };
+}
+
+function isAppointmentWithinFutureDays(value: Date) {
+  const now = new Date();
+  const maxAt = new Date(now.getTime() + APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
+  const ts = value.getTime();
+  return ts >= now.getTime() && ts <= maxAt.getTime();
 }
 
 function normalizeLooseAddress(text: string) {
@@ -240,7 +259,7 @@ export async function claimDispatchOrder(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) redirect(buildMobileQuery(formData, "new", { claimed: "1" }));
+  if (result > 0) redirect(buildMobileQuery(formData, "doing", { claimed: "1" }));
   redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
 }
 
@@ -296,10 +315,13 @@ export async function finishDispatchOrder(formData: FormData) {
 
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
-  const handledPhone = String(formData.get("handledPhone") ?? "").trim();
-  if (!/^1\d{10}$/.test(handledPhone)) {
-    redirect(buildMobileQuery(formData, "doing", { op: "finish-handle-phone" }));
-  }
+  const handledPhoneRaw = String(formData.get("handledPhone") ?? "").trim();
+  const handledPhone = normalizeMobilePhone(handledPhoneRaw);
+  const handledPhoneToSave = handledPhone || handledPhoneRaw || null;
+  const handledRemark = String(formData.get("remark") ?? "").trim();
+  const handledPhoto = formData.get("photo");
+  const handledPhotoUrl = handledPhoto instanceof File ? await saveCompressedImage(handledPhoto, "orders") : undefined;
+  if (handledPhotoUrl === "__TOO_LARGE__") redirect(buildMobileQuery(formData, "doing", { op: "file" }));
   const convertToPrecise = String(formData.get("convertToPrecise") ?? "") === "1";
 
   const operatorId = Number(session.user.id);
@@ -309,18 +331,9 @@ export async function finishDispatchOrder(formData: FormData) {
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-    select: { id: true, customerType: true, longitude: true, latitude: true },
+    select: { id: true, customerType: true },
   });
   if (!order) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
-
-  const isPrecise = (order.customerType || "").includes("精准");
-  if (isPrecise) {
-    if (snapshot.operatorLatitude == null || snapshot.operatorLongitude == null || order.latitude == null || order.longitude == null) {
-      redirect(buildMobileQuery(formData, "doing", { op: "finish-distance" }));
-    }
-    const distance = calcDistanceKm(snapshot.operatorLatitude, snapshot.operatorLongitude, order.latitude, order.longitude);
-    if (distance > PRECISE_FINISH_RADIUS_KM) redirect(buildMobileQuery(formData, "doing", { op: "finish-distance" }));
-  }
 
   const result = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -329,7 +342,8 @@ export async function finishDispatchOrder(formData: FormData) {
       where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
       data: {
         status: "DONE",
-        handledPhone,
+        handledPhone: handledPhoneToSave,
+        notHandledReason: null,
         customerType: nextCustomerType,
         convertedToPreciseById: convertToPrecise ? operatorId : null,
         convertedToPreciseAt: convertToPrecise ? now : null,
@@ -343,7 +357,8 @@ export async function finishDispatchOrder(formData: FormData) {
           operatorId,
           tenantId,
           actionType: "FINISH",
-          remark: `单据完结；办理号码：${handledPhone}${convertToPrecise ? "；转精准" : ""}`,
+          remark: `单据已办理${handledPhoneToSave ? `；办理号码：${handledPhoneToSave}` : ""}${handledRemark ? `；备注：${handledRemark}` : ""}${convertToPrecise ? "；转精准" : ""}`,
+          photoUrl: handledPhotoUrl,
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },
@@ -358,12 +373,25 @@ export async function finishDispatchOrder(formData: FormData) {
 }
 
 export async function endDispatchOrder(formData: FormData) {
+  await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
   if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+  const endReasonRaw = String(formData.get("notHandledReason") ?? "").trim();
+  const endReason = normalizeNotHandledReason(endReasonRaw);
+  if (!END_REASON_OPTIONS.includes(endReason as (typeof END_REASON_OPTIONS)[number])) {
+    redirect(buildMobileQuery(formData, "doing", { op: "end-reason" }));
+  }
+  const endRemark = String(formData.get("remark") ?? "").trim();
+  if (!endRemark) {
+    redirect(buildMobileQuery(formData, "doing", { op: "end-remark" }));
+  }
+  const endPhoto = formData.get("photo");
+  const endPhotoUrl = endPhoto instanceof File ? await saveCompressedImage(endPhoto, "orders") : undefined;
+  if (endPhotoUrl === "__TOO_LARGE__") redirect(buildMobileQuery(formData, "doing", { op: "file" }));
 
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
@@ -372,23 +400,14 @@ export async function endDispatchOrder(formData: FormData) {
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-    select: { id: true, customerType: true, longitude: true, latitude: true },
+    select: { id: true },
   });
   if (!order) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
-
-  const isPrecise = (order.customerType || "").includes("精准");
-  if (isPrecise) {
-    if (snapshot.operatorLatitude == null || snapshot.operatorLongitude == null || order.latitude == null || order.longitude == null) {
-      redirect(buildMobileQuery(formData, "doing", { op: "end-distance" }));
-    }
-    const distance = calcDistanceKm(snapshot.operatorLatitude, snapshot.operatorLongitude, order.latitude, order.longitude);
-    if (distance > PRECISE_FINISH_RADIUS_KM) redirect(buildMobileQuery(formData, "doing", { op: "end-distance" }));
-  }
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.dispatchOrder.updateMany({
       where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-      data: { status: "ENDED" },
+      data: { status: "ENDED", notHandledReason: endReason, handledPhone: null },
     });
 
     if (updated.count > 0) {
@@ -398,7 +417,8 @@ export async function endDispatchOrder(formData: FormData) {
           operatorId,
           tenantId,
           actionType: "END",
-          remark: "单据结束",
+          remark: `单据不办理；原因：${endReason}${endRemark ? `；备注：${endRemark}` : ""}`,
+          photoUrl: endPhotoUrl,
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },
@@ -425,8 +445,17 @@ export async function rescheduleDispatchOrder(formData: FormData) {
   if (!scheduleAt || Number.isNaN(scheduleAt.getTime())) {
     redirect(buildMobileQuery(formData, "doing", { op: "reschedule-empty" }));
   }
+  const now = new Date();
+  const maxAt = new Date(now.getTime() + APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
+  if (scheduleAt.getTime() < now.getTime()) {
+    redirect(buildMobileQuery(formData, "doing", { op: "reschedule-range" }));
+  }
+  if (scheduleAt.getTime() > maxAt.getTime()) {
+    redirect(buildMobileQuery(formData, "doing", { op: "reschedule-range" }));
+  }
 
   const remark = String(formData.get("remark") ?? "").trim();
+  const nextAddress = String(formData.get("address") ?? "").trim();
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
   if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
@@ -434,24 +463,54 @@ export async function rescheduleDispatchOrder(formData: FormData) {
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-    select: { id: true },
+    select: { id: true, address: true, longitude: true, latitude: true },
   });
   if (!order) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
 
-  await prisma.dispatchOrderRecord.create({
-    data: {
-      orderId,
-      operatorId,
-      tenantId,
-      actionType: "RESCHEDULE",
-      remark: `改约时间：${new Date(scheduleAt).toLocaleString("zh-CN")}${remark ? `；备注：${remark}` : ""}`,
-      operatorLongitude: snapshot.operatorLongitude,
-      operatorLatitude: snapshot.operatorLatitude,
-    },
+  const finalAddress = nextAddress || order.address || "";
+  let finalLongitude = order.longitude ?? null;
+  let finalLatitude = order.latitude ?? null;
+  if (finalAddress) {
+    const geocodeThrottle = createGeocodeThrottle(GEOCODE_MIN_INTERVAL_MS);
+    const geo = await geocodeAddressWithRetry(finalAddress, geocodeThrottle);
+    if (geo.longitude != null && geo.latitude != null) {
+      finalLongitude = geo.longitude;
+      finalLatitude = geo.latitude;
+    }
+  }
+
+  const updatedCount = await prisma.$transaction(async (tx) => {
+    const updated = await tx.dispatchOrder.updateMany({
+      where: { id: orderId, tenantId, isDeleted: false },
+      data: {
+        appointmentAt: scheduleAt,
+        address: finalAddress,
+        longitude: finalLongitude,
+        latitude: finalLatitude,
+      },
+    });
+    if (updated.count <= 0) {
+      return 0;
+    }
+    await tx.dispatchOrderRecord.create({
+      data: {
+        orderId,
+        operatorId,
+        tenantId,
+        actionType: "RESCHEDULE",
+        remark: `改约时间：${new Date(scheduleAt).toLocaleString("zh-CN")}；地址：${finalAddress || "-"}${remark ? `；备注：${remark}` : ""}`,
+        operatorLongitude: snapshot.operatorLongitude,
+        operatorLatitude: snapshot.operatorLatitude,
+      },
+    });
+    return updated.count;
   });
 
   revalidatePath("/mobile");
-  redirect(buildMobileQuery(formData, "doing", { op: "reschedule1" }));
+  if (updatedCount > 0) {
+    redirect(buildMobileQuery(formData, "doing", { op: "reschedule1" }));
+  }
+  redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
 }
 
 export async function convertDispatchOrderToPrecise(formData: FormData) {
@@ -464,6 +523,13 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
 
   const operatorId = Number(session.user.id);
+  const operator = await prisma.user.findUnique({
+    where: { id: operatorId },
+    select: { tenantId: true, accessMode: true, isDeleted: true, isDisabled: true },
+  });
+  if (!operator || operator.isDeleted || operator.isDisabled || operator.accessMode !== "SUPERVISOR") {
+    redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+  }
   const tenantId = await getOperatorTenantId(operatorId);
   if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
 
@@ -474,6 +540,9 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   const appointmentAtText = String(formData.get("appointmentAt") ?? "").trim();
   const appointmentAt = appointmentAtText ? new Date(appointmentAtText) : null;
   if (appointmentAt && Number.isNaN(appointmentAt.getTime())) {
+    redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
+  }
+  if (appointmentAt && !isAppointmentWithinFutureDays(appointmentAt)) {
     redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
   }
 
@@ -540,4 +609,54 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   revalidatePath("/mobile");
   if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "convert1" }));
   redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+}
+
+export async function updateMobileProfilePassword(formData: FormData) {
+  const session = await getAuthSession();
+  if (!session?.user?.id) redirect("/login");
+
+  const source = String(formData.get("source") ?? "").trim();
+  const tabRaw = String(formData.get("tab") ?? "new");
+  const tab = tabRaw === "doing" || tabRaw === "done" ? tabRaw : "new";
+  const oldPassword = String(formData.get("oldPassword") ?? "").trim();
+  const newPassword = String(formData.get("newPassword") ?? "").trim();
+  const confirmPassword = String(formData.get("confirmPassword") ?? "").trim();
+
+  const profileRedirect = (op: string) => `/mobile/profile?op=${encodeURIComponent(op)}&tab=${encodeURIComponent(tab)}`;
+  const mobileRedirect = (op: string) => buildMobileQuery(formData, tab, { op });
+  const targetRedirect = (op: string) => (source === "profile" ? profileRedirect(op) : mobileRedirect(op));
+
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    redirect(targetRedirect("profile-pwd0"));
+  }
+  if (newPassword.length < 6) {
+    redirect(targetRedirect("profile-pwd-short"));
+  }
+  if (newPassword !== confirmPassword) {
+    redirect(targetRedirect("profile-pwd-mismatch"));
+  }
+
+  const userId = Number(session.user.id);
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true, isDeleted: true, isDisabled: true },
+  });
+  if (!me || me.isDeleted || me.isDisabled) {
+    redirect("/login");
+  }
+
+  const oldOk = await bcrypt.compare(oldPassword, me.passwordHash);
+  if (!oldOk) {
+    redirect(targetRedirect("profile-pwd-old"));
+  }
+
+  const nextHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: nextHash },
+  });
+
+  revalidatePath("/mobile/profile");
+  revalidatePath("/mobile");
+  redirect(targetRedirect("profile-pwd1"));
 }

@@ -9,6 +9,7 @@ declare module "next-auth" {
     roleDataScope: string;
     username: string;
     accessMode: string;
+    loginTarget: string;
     tenantId: string;
     tenantCode: string;
   }
@@ -21,6 +22,7 @@ declare module "next-auth" {
       roleDataScope: string;
       username: string;
       accessMode: string;
+      loginTarget: string;
       tenantId: string;
       tenantCode: string;
     };
@@ -35,6 +37,7 @@ declare module "next-auth/jwt" {
     roleDataScope: string;
     username: string;
     accessMode: string;
+    loginTarget: string;
     tenantId: string;
     tenantCode: string;
   }

@@ -22,6 +22,7 @@ type Props = {
   initialLongitude?: number;
   initialLatitude?: number;
   iconOnly?: boolean;
+  autoSearchOnOpen?: boolean;
   onConfirm: (result: PickResult) => void;
 };
 
@@ -80,6 +81,7 @@ export function AmapPickerModal({
   initialLongitude,
   initialLatitude,
   iconOnly,
+  autoSearchOnOpen = false,
   onConfirm,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -95,6 +97,7 @@ export function AmapPickerModal({
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
   const autoCompleteRef = useRef<any>(null);
+  const openingSearchedRef = useRef(false);
 
   const center = useMemo(() => {
     if (pickedLng != null && pickedLat != null) {
@@ -135,6 +138,22 @@ export function AmapPickerModal({
           });
         }
 
+        const seedKeyword = (initialAddress || "").trim();
+        if (autoSearchOnOpen && seedKeyword && geocoderRef.current && !openingSearchedRef.current) {
+          openingSearchedRef.current = true;
+          geocoderRef.current.getLocation(seedKeyword, (status: string, result: any) => {
+            if (status !== "complete" || !result?.geocodes?.length) {
+              return;
+            }
+            const geocode = result.geocodes[0];
+            applyPickedPoint(
+              Number(geocode.location.lng),
+              Number(geocode.location.lat),
+              geocode.formattedAddress || seedKeyword,
+            );
+          });
+        }
+
         map.on("click", (event: any) => {
           const lng = event.lnglat.getLng();
           const lat = event.lnglat.getLat();
@@ -170,8 +189,9 @@ export function AmapPickerModal({
       markerRef.current = null;
       geocoderRef.current = null;
       autoCompleteRef.current = null;
+      openingSearchedRef.current = false;
     };
-  }, [center, open, pickedLat, pickedLng]);
+  }, [autoSearchOnOpen, center, initialAddress, open, pickedLat, pickedLng]);
 
   useEffect(() => {
     if (!open) return;
@@ -392,7 +412,7 @@ export function AmapPickerModal({
                 }}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
               >
-                使用该位置
+                确认选点
               </button>
             </div>
           </div>

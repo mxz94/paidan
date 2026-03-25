@@ -2,6 +2,7 @@
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DashboardFrame } from "@/components/dashboard-frame";
+import { canAccessDashboard } from "@/lib/user-access";
 
 export default async function DashboardLayout({
   children,
@@ -32,6 +33,9 @@ export default async function DashboardLayout({
   if (!currentUser) {
     redirect("/login");
   }
+  if (currentUser.isDeleted || currentUser.isDisabled) {
+    redirect("/login");
+  }
 
   if (currentUser.role.code !== "SUPER_ADMIN") {
     if (!currentUser.tenantId || !currentUser.tenant?.isActive) {
@@ -39,7 +43,7 @@ export default async function DashboardLayout({
     }
   }
 
-  if (currentUser.accessMode === "MOBILE") {
+  if (!canAccessDashboard(currentUser.accessMode)) {
     redirect("/mobile");
   }
 

@@ -14,12 +14,15 @@ export async function getSessionUserWithTenant() {
       username: true,
       displayName: true,
       accessMode: true,
+      storeId: true,
+      isDeleted: true,
+      isDisabled: true,
       tenantId: true,
       role: { select: { code: true, name: true, dataScope: true } },
       tenant: { select: { id: true, code: true, name: true, isActive: true } },
     },
   });
-  if (!user) {
+  if (!user || user.isDeleted || user.isDisabled) {
     redirect("/login");
   }
   return user;
@@ -37,5 +40,12 @@ export function hasTenantDataScope(roleCode: string, dataScope?: string | null) 
   if (isTenantAdminRole(roleCode)) {
     return true;
   }
-  return (dataScope ?? "TENANT") !== "OWN";
+  return (dataScope ?? "OWN") === "TENANT";
+}
+
+export function hasStoreDataScope(roleCode: string, dataScope?: string | null) {
+  if (isTenantAdminRole(roleCode)) {
+    return false;
+  }
+  return (dataScope ?? "OWN") === "STORE";
 }

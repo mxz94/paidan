@@ -66,6 +66,7 @@ const LUOYANG_REGION_KEYWORDS = [
   "宜阳县",
   "洛宁县",
   "伊川县",
+  "伊滨区",
 ];
 
 const REGION_ALIAS_TO_FULL: Array<[string, string]> = [
@@ -83,6 +84,7 @@ const REGION_ALIAS_TO_FULL: Array<[string, string]> = [
   ["宜阳", "宜阳县"],
   ["洛宁", "洛宁县"],
   ["伊川", "伊川县"],
+  ["伊滨", "伊滨区"],
 ];
 
 function normalizeHeader(value: unknown) {
@@ -118,6 +120,16 @@ function parseOptionalDateTime(value: FormDataEntryValue | null) {
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+const APPOINTMENT_MAX_DAYS = 15;
+
+function validateAppointmentInFutureDays(value: Date | null) {
+  if (!value) return true;
+  const now = new Date();
+  const maxAt = new Date(now.getTime() + APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
+  const ts = value.getTime();
+  return ts >= now.getTime() && ts <= maxAt.getTime();
 }
 
 function sleep(ms: number) {
@@ -367,7 +379,7 @@ async function findOrCreateInviterUserInTx(
       displayName: name,
       passwordHash,
       roleId: defaultRoleId,
-      accessMode: "BACKEND",
+      accessMode: "SERVICE",
       tenantId,
     },
     select: { id: true },
@@ -385,21 +397,23 @@ export async function createDispatchOrder(formData: FormData) {
   }
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { tenantId: true, role: { select: { code: true, dataScope: true } } },
+    select: { tenantId: true, accessMode: true },
   });
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=invalid");
   }
-  const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
 
   const longitude = parseNullableNumber(formData.get("longitude"));
   const latitude = parseNullableNumber(formData.get("latitude"));
 
+  const isServiceUser = me.accessMode === "SERVICE";
+  const isSupervisorUser = me.accessMode === "SUPERVISOR";
+  const customerTypeInput = isServiceUser ? "客服" : formData.get("customerType");
   const parsed = createDispatchSchema.safeParse({
     title: formData.get("title"),
     region: formData.get("region"),
     address: formData.get("address"),
-    customerType: formData.get("customerType"),
+    customerType: customerTypeInput,
     phone: formData.get("phone"),
   });
 
@@ -408,20 +422,23 @@ export async function createDispatchOrder(formData: FormData) {
   }
 
   const photo = formData.get("photo");
-  if (!(photo instanceof File) || photo.size <= 0) {
-    redirect("/dashboard/orders?err=invalid");
-  }
-  const photoUrl = await saveCompressedImage(photo, "orders");
-
-  if (photoUrl === "__TOO_LARGE__") {
-    redirect("/dashboard/orders?err=file");
+  let photoUrl: string | null = null;
+  if (photo instanceof File && photo.size > 0) {
+    const saved = await saveCompressedImage(photo, "orders");
+    if (saved === "__TOO_LARGE__") {
+      redirect("/dashboard/orders?err=file");
+    }
+    photoUrl = saved ?? null;
   }
 
   const region = parsed.data.region;
   const address = parsed.data.address;
-  const customerType = parsed.data.customerType;
+  const customerType = isServiceUser ? "客服" : parsed.data.customerType;
   const remark = String(formData.get("remark") ?? "").trim();
   const appointmentAt = parseOptionalDateTime(formData.get("appointmentAt"));
+  if (appointmentAt && !validateAppointmentInFutureDays(appointmentAt)) {
+    redirect("/dashboard/orders?err=invalid");
+  }
   const enteredTitle = parsed.data.title.trim();
   const matchedPackage = await prisma.package.findFirst({
     where: {
@@ -431,6 +448,11 @@ export async function createDispatchOrder(formData: FormData) {
     },
     select: { id: true },
   });
+
+  const now = new Date();
+  const nextStatus = isSupervisorUser ? "CLAIMED" : "PENDING";
+  const nextClaimedById = isSupervisorUser ? Number(session.user.id) : null;
+  const nextClaimedAt = isSupervisorUser ? now : null;
 
   await prisma.dispatchOrder.create({
     data: {
@@ -447,7 +469,9 @@ export async function createDispatchOrder(formData: FormData) {
       photoUrl,
       tenantId: Number(me.tenantId),
       createdById: Number(session.user.id),
-      status: "PENDING",
+      status: nextStatus,
+      claimedById: nextClaimedById,
+      claimedAt: nextClaimedAt,
     },
   });
 
@@ -864,11 +888,11 @@ export async function updateDispatchOrder(formData: FormData) {
     redirect("/dashboard/orders?err=invalid");
   }
 
+  const updateOrderWhere = canAll
+    ? { id: parsed.data.orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
+    : { id: parsed.data.orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false, status: "PENDING" as const };
   const order = await prisma.dispatchOrder.findFirst({
-    where:
-      canAll
-        ? { id: parsed.data.orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
-        : { id: parsed.data.orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false, status: "PENDING" },
+    where: updateOrderWhere,
     select: { id: true },
   });
   if (!order) {
@@ -990,7 +1014,7 @@ export async function assignDispatchOrder(formData: FormData) {
   }
 
   const targetUser = await prisma.user.findFirst({
-    where: { id: userId, tenantId: Number(me.tenantId), accessMode: "MOBILE" },
+    where: { id: userId, tenantId: Number(me.tenantId), accessMode: { in: ["SALE", "SUPERVISOR"] }, isDeleted: false, isDisabled: false },
     select: { id: true, displayName: true },
   });
   if (!targetUser) {
@@ -1069,8 +1093,8 @@ export async function deleteDispatchOrder(formData: FormData) {
 
   const where =
       canAll
-      ? { id: orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" }
-      : { id: orderId, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" };
+      ? { id: orderId, tenantId: Number(me.tenantId), isDeleted: false, status: "PENDING" as const }
+      : { id: orderId, tenantId: Number(me.tenantId), createdById: operatorId, isDeleted: false, status: "PENDING" as const };
   const order = await prisma.dispatchOrder.findFirst({ where, select: { id: true } });
   if (!order) {
     redirect("/dashboard/orders?err=delete_state");
@@ -1093,11 +1117,19 @@ export async function deleteDispatchOrdersBatch(formData: FormData) {
 
   const keyword = String(formData.get("keyword") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
+  const district = String(formData.get("district") ?? "").trim();
+  const town = String(formData.get("town") ?? "").trim();
   const pageSize = String(formData.get("pageSize") ?? "").trim();
+  const sortBy = String(formData.get("sortBy") ?? "").trim();
+  const sortDir = String(formData.get("sortDir") ?? "").trim();
   const qs = new URLSearchParams();
   if (keyword) qs.set("keyword", keyword);
   if (status) qs.set("status", status);
+  if (district) qs.set("district", district);
+  if (town) qs.set("town", town);
   if (pageSize) qs.set("pageSize", pageSize);
+  if (sortBy) qs.set("sortBy", sortBy);
+  if (sortDir) qs.set("sortDir", sortDir);
   qs.set("page", "1");
   const redirectBase = `/dashboard/orders${qs.toString() ? `?${qs.toString()}` : ""}`;
 
@@ -1152,11 +1184,19 @@ export async function batchOperateDispatchOrders(formData: FormData) {
 
   const keyword = String(formData.get("keyword") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
+  const district = String(formData.get("district") ?? "").trim();
+  const town = String(formData.get("town") ?? "").trim();
   const pageSize = String(formData.get("pageSize") ?? "").trim();
+  const sortBy = String(formData.get("sortBy") ?? "").trim();
+  const sortDir = String(formData.get("sortDir") ?? "").trim();
   const qs = new URLSearchParams();
   if (keyword) qs.set("keyword", keyword);
   if (status) qs.set("status", status);
+  if (district) qs.set("district", district);
+  if (town) qs.set("town", town);
   if (pageSize) qs.set("pageSize", pageSize);
+  if (sortBy) qs.set("sortBy", sortBy);
+  if (sortDir) qs.set("sortDir", sortDir);
   qs.set("page", "1");
   const redirectBase = `/dashboard/orders${qs.toString() ? `?${qs.toString()}` : ""}`;
 
@@ -1193,7 +1233,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     }
 
     const targetUser = await prisma.user.findFirst({
-      where: { id: userId, tenantId: Number(me.tenantId), accessMode: "MOBILE" },
+      where: { id: userId, tenantId: Number(me.tenantId), accessMode: { in: ["SALE", "SUPERVISOR"] }, isDeleted: false, isDisabled: false },
       select: { id: true, displayName: true },
     });
     if (!targetUser) {
@@ -1282,6 +1322,7 @@ export async function batchOperateDispatchOrders(formData: FormData) {
 
   redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=assign_invalid`);
 }
+
 
 
 
