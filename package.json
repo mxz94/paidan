@@ -12,6 +12,8 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@fontsource/noto-sans-sc": "^5.2.9",
+    "@fontsource/space-grotesk": "^5.2.10",
     "@prisma/client": "^6.16.0",
     "bcryptjs": "^3.0.3",
     "next": "16.2.0",

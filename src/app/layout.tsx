@@ -1,17 +1,28 @@
 ﻿import type { Metadata, Viewport } from "next";
-import { Noto_Sans_SC, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
 
-const notoSansSc = Noto_Sans_SC({
+const notoSansSc = localFont({
   variable: "--font-noto-sans-sc",
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  display: "swap",
+  src: [
+    { path: "./fonts/noto-sans-sc-chinese-simplified-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/noto-sans-sc-chinese-simplified-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/noto-sans-sc-chinese-simplified-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 });
 
-const spaceGrotesk = Space_Grotesk({
+const spaceGrotesk = localFont({
   variable: "--font-space-grotesk",
-  subsets: ["latin"],
+  display: "swap",
+  src: [
+    { path: "./fonts/space-grotesk-latin-300-normal.woff2", weight: "300", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 });
 
 export const metadata: Metadata = {
