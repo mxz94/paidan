@@ -73,6 +73,68 @@ public              静态资源、PWA 文件
 - 反向代理到 3000 端口
 - 如需 PWA 与 Web Push，建议启用 HTTPS
 
+## Android App（Capacitor）
+
+项目已接入 Capacitor，可打包 Android APK（壳应用，加载线上地址）。
+
+1. 安装依赖
+
+```bash
+npm install
+```
+
+2. 可选：指定 APP 加载地址（默认 `https://pd.malanxi.top`）
+
+```bash
+export CAPACITOR_SERVER_URL="https://你的域名"
+```
+
+3. 同步 Android 工程
+
+```bash
+npm run cap:sync
+```
+
+4. 打开 Android Studio
+
+```bash
+npm run cap:open:android
+```
+
+5. 在 Android Studio 中 `Build > Build Bundle(s) / APK(s) > Build APK(s)` 生成安装包。
+
+### Release 签名打包（APK）
+
+已内置 `keystore.properties` 读取逻辑，按下面操作即可生成正式包。
+
+1. 进入 Android 目录并生成签名文件（示例）
+
+```bash
+cd android
+keytool -genkeypair -v -keystore release-key.jks -alias release -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. 新建 `android/keystore.properties`（可参考 `android/keystore.properties.example`）
+
+```properties
+storeFile=release-key.jks
+storePassword=你的store密码
+keyAlias=release
+keyPassword=你的key密码
+```
+
+3. 回到项目根目录执行 release 构建
+
+```bash
+npm run apk:release
+```
+
+4. APK 输出路径
+
+```text
+android/app/build/outputs/apk/release/app-release.apk
+```
+
 ## 仓库
 
 - GitHub: [git@github.com:mxz94/paidan.git](git@github.com:mxz94/paidan.git)

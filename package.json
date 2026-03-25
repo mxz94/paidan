@@ -6,6 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "cap:sync": "cap sync android",
+    "cap:add:android": "cap add android",
+    "cap:open:android": "cap open android",
+    "apk:debug": "cd android && gradlew.bat assembleDebug",
+    "apk:release": "cd android && gradlew.bat assembleRelease",
     "lint": "eslint",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node prisma/seed.mjs",
@@ -26,6 +31,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.2.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
