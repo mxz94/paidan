@@ -30,7 +30,6 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
   const [showAddressTips, setShowAddressTips] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  const defaultTitle = "";
   const isServiceUser = currentAccessMode === "SERVICE";
   const towns = getLuoyangTowns(district);
   const regionValue = composeRegionValue(district, town);
@@ -108,7 +107,9 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+        }}
         className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
       >
         新增单据
@@ -152,20 +153,20 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
                   标题 <span className="text-rose-500">*</span>
                 </span>
                 <div>
-                  <input
+                  <select
                     name="title"
                     required
-                    defaultValue={defaultTitle}
-                    list="order-title-options"
-                    placeholder="直接输入标题（无需先建套餐）"
+                    defaultValue=""
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                  />
-                  <p className="mt-1 text-xs text-slate-500">可直接输入；若存在同名套餐会自动关联。</p>
-                  <datalist id="order-title-options">
+                  >
+                    <option value="">请选择套餐</option>
                     {packages.map((item) => (
-                      <option key={item.id} value={item.name} />
+                      <option key={item.id} value={item.name}>
+                        {item.name}
+                      </option>
                     ))}
-                  </datalist>
+                  </select>
+                  <p className="mt-1 text-xs text-slate-500">标题由套餐名称自动带出。</p>
                 </div>
               </label>
 

@@ -175,7 +175,12 @@ export function MobileOrdersPanel({
       const titleKeyword = newTitleKeyword.trim().toLowerCase();
       const typedAndNamed = !titleKeyword
         ? typed
-        : typed.filter((item) => String(item.title || "").toLowerCase().includes(titleKeyword));
+        : typed.filter((item) => {
+            const title = String(item.title || "").toLowerCase();
+            const region = String(item.region || "").toLowerCase();
+            const address = String(item.address || "").toLowerCase();
+            return title.includes(titleKeyword) || region.includes(titleKeyword) || address.includes(titleKeyword);
+          });
 
       return typedAndNamed.sort((a, b) => {
         if (newSortMode === "distance") {
@@ -244,16 +249,30 @@ export function MobileOrdersPanel({
     <>
       <div className="rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-100">
         <div className="flex items-center gap-2">
-          <input
-            list="mobile-region-options"
+          <select
             name="region"
             value={selectedRegion}
             onChange={(event) => {
               setSelectedRegion(event.currentTarget.value);
             }}
-            placeholder="区域筛选（可搜索）"
             className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs"
-          />
+          >
+            <option value="">全部区域</option>
+            {regions.map((region) => (
+              <option key={region} value={region}>
+                {region}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setSelectedRegion("")}
+            className="shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
+          >
+            清除
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
           <select
             value={tab === "new" ? newSortMode : tab === "doing" ? doingSortMode : doneSortMode}
             onChange={(event) => {
@@ -262,7 +281,7 @@ export function MobileOrdersPanel({
               if (tab === "doing") setDoingSortMode(value as DoingSortMode);
               if (tab === "done") setDoneSortMode(value as DoneSortMode);
             }}
-            className="w-[42%] rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+            className={tab === "new" ? "w-[56%] rounded-lg border border-slate-300 px-2 py-1.5 text-xs" : "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"}
           >
             {tab === "new" ? (
               <>
@@ -292,38 +311,24 @@ export function MobileOrdersPanel({
             <select
               value={newCustomerType}
               onChange={(event) => setNewCustomerType(event.currentTarget.value as "" | "精准" | "客服")}
-              className="w-[24%] rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+              className="w-[44%] rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
             >
               <option value="">全部</option>
               <option value="精准">精准</option>
               <option value="客服">客服</option>
             </select>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setSelectedRegion("")}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
-          >
-            清除
-          </button>
         </div>
         {tab === "new" ? (
           <div className="mt-2">
             <input
               value={newTitleKeyword}
               onChange={(event) => setNewTitleKeyword(event.currentTarget.value)}
-              placeholder="套餐名筛选（标题）"
+              placeholder="套餐名/区域/地址搜索"
               className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs"
             />
           </div>
         ) : null}
-        <datalist id="mobile-region-options">
-          {regions.map((region) => (
-            <option key={region} value={region}>
-              {region}
-            </option>
-          ))}
-        </datalist>
       </div>
 
       <div className="space-y-3">
