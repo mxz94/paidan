@@ -3,6 +3,7 @@ import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DashboardFrame } from "@/components/dashboard-frame";
 import { canAccessDashboard } from "@/lib/user-access";
+import { touchUserDailyActive } from "@/lib/user-activity";
 
 export default async function DashboardLayout({
   children,
@@ -46,6 +47,8 @@ export default async function DashboardLayout({
   if (!canAccessDashboard(currentUser.accessMode)) {
     redirect("/mobile");
   }
+
+  await touchUserDailyActive(currentUser.id, currentUser.lastLoginAt);
 
   const menus = currentUser.role.roleMenus
     .map((item) => item.menu)

@@ -100,6 +100,9 @@ export async function ensureUserManageColumns() {
   if (!names.has("isDisabled")) {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "isDisabled" BOOLEAN NOT NULL DEFAULT false;`);
   }
+  if (!names.has("lastLoginAt")) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME;`);
+  }
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 }

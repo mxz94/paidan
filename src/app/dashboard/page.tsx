@@ -1,6 +1,7 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
+import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { DashboardStoreFilter } from "@/components/dashboard-store-filter";
 import { canAccessMobile, resolveDashboardLandingPathByMenus } from "@/lib/user-access";
@@ -46,6 +47,7 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
+  await ensureDispatchOrderBusinessColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
@@ -581,5 +583,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     </section>
   );
 }
+
 
 

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { canAccessDashboard, canAccessMobile, normalizeAccessMode } from "@/lib/user-access";
+import { ensureUserManageColumns } from "@/lib/db-ensure";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -21,6 +22,7 @@ export const authOptions: NextAuthOptions = {
         password: { label: "密码", type: "password" },
       },
       async authorize(credentials) {
+        await ensureUserManageColumns();
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) {
           return null;
@@ -50,6 +52,11 @@ export const authOptions: NextAuthOptions = {
         if (!canAccessDashboard(accessMode) && !canAccessMobile(accessMode)) {
           return null;
         }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
 
         return {
           id: String(user.id),

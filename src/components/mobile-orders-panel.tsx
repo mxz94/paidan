@@ -139,7 +139,8 @@ export function MobileOrdersPanel({
     return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
   };
   const minScheduleAt = toLocalInput(nowLocal);
-  const maxScheduleAt = toLocalInput(new Date(nowLocal.getTime() + 15 * 24 * 60 * 60 * 1000));
+  const maxRescheduleAt = toLocalInput(new Date(nowLocal.getTime() + 7 * 24 * 60 * 60 * 1000));
+  const maxConvertAt = toLocalInput(new Date(nowLocal.getTime() + 15 * 24 * 60 * 60 * 1000));
 
   useEffect(() => {
     if (tab === "new") setNewSortMode("distance");
@@ -567,7 +568,7 @@ export function MobileOrdersPanel({
                         required
                         value={rescheduleAt}
                         min={minScheduleAt}
-                        max={maxScheduleAt}
+                        max={maxRescheduleAt}
                         onChange={(event) => {
                           const value = event.currentTarget.value;
                           setRescheduleAtMap((prev) => ({
@@ -668,7 +669,7 @@ export function MobileOrdersPanel({
                         type="datetime-local"
                         value={convertAt}
                         min={minScheduleAt}
-                        max={maxScheduleAt}
+                        max={maxConvertAt}
                         onChange={(event) => {
                           const value = event.currentTarget.value;
                           setConvertAtMap((prev) => ({

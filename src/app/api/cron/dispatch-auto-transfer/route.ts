@@ -3,20 +3,23 @@ import { runDispatchAutoTransfer } from "@/lib/dispatch-auto-transfer";
 
 export const dynamic = "force-dynamic";
 
+function isApiEnabled() {
+  return (process.env.ENABLE_CRON_HTTP_API || "").trim() === "1";
+}
+
 function isAuthorized(req: NextRequest) {
   const secret = (process.env.CRON_SECRET || "").trim();
   if (!secret) {
-    return true;
+    return false;
   }
   const bearer = req.headers.get("authorization") || "";
-  if (bearer === `Bearer ${secret}`) {
-    return true;
-  }
-  const querySecret = req.nextUrl.searchParams.get("secret") || "";
-  return querySecret === secret;
+  return bearer === `Bearer ${secret}`;
 }
 
 export async function POST(req: NextRequest) {
+  if (!isApiEnabled()) {
+    return NextResponse.json({ ok: false, message: "disabled" }, { status: 403 });
+  }
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, message: "unauthorized" }, { status: 401 });
   }
@@ -36,6 +39,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  if (!isApiEnabled()) {
+    return NextResponse.json({ ok: false, message: "disabled" }, { status: 403 });
+  }
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, message: "unauthorized" }, { status: 401 });
   }
@@ -46,4 +52,3 @@ export async function GET(req: NextRequest) {
     endpoint: "/api/cron/dispatch-auto-transfer",
   });
 }
-

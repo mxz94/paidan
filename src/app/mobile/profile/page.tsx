@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessMobile } from "@/lib/user-access";
+import { touchUserDailyActive } from "@/lib/user-activity";
 import { LogoutButton } from "@/components/logout-button";
+import { OnlineHeartbeat } from "@/components/online-heartbeat";
 import { updateMobileProfilePassword } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +31,7 @@ export default async function MobileProfilePage({ searchParams }: { searchParams
 
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { id: true, accessMode: true, isDeleted: true, isDisabled: true, displayName: true },
+    select: { id: true, accessMode: true, isDeleted: true, isDisabled: true, displayName: true, lastLoginAt: true },
   });
   if (!me || me.isDeleted || me.isDisabled) {
     redirect("/login");
@@ -38,6 +40,8 @@ export default async function MobileProfilePage({ searchParams }: { searchParams
     redirect("/dashboard");
   }
 
+  await touchUserDailyActive(me.id, me.lastLoginAt);
+
   const params = await searchParams;
   const opInfo = params.op ? opMessage[params.op] : null;
   const backTab = ["new", "doing", "done"].includes(String(params.tab)) ? String(params.tab) : "new";
@@ -45,6 +49,7 @@ export default async function MobileProfilePage({ searchParams }: { searchParams
   return (
     <main className="min-h-screen bg-slate-100 p-3 text-slate-900">
       <section className="mx-auto max-w-md space-y-3">
+        <OnlineHeartbeat />
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold">个人中心</h1>

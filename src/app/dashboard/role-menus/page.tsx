@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
 import { saveRoleMenus } from "./actions";
 
+export const dynamic = "force-dynamic";
+
 type SearchParams = Promise<{ role?: string; saved?: string; created?: string; err?: string }>;
 
 export default async function RoleMenusPage({ searchParams }: { searchParams: SearchParams }) {
@@ -88,7 +90,7 @@ export default async function RoleMenusPage({ searchParams }: { searchParams: Se
           </ul>
         </aside>
 
-        <form action={saveRoleMenus} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <form key={role.id} action={saveRoleMenus} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <input type="hidden" name="roleId" value={role.id} />
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700">

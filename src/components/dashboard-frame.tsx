@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
 import { MobileLocationSync } from "@/components/mobile-location-sync";
+import { OnlineHeartbeat } from "@/components/online-heartbeat";
 
 type MenuItem = {
   id: number;
@@ -121,6 +122,7 @@ export function DashboardFrame({ displayName, roleName, menus, children }: Props
         {children}
       </main>
       <MobileLocationSync />
+      <OnlineHeartbeat />
     </div>
   );
 }

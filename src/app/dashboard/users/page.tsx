@@ -243,6 +243,7 @@ export default async function UsersPage({
                 <th className="px-2 py-2 font-medium">状态</th>
                 <th className="px-2 py-2 font-medium">经纬度</th>
                 <th className="px-2 py-2 font-medium">定位更新时间</th>
+                <th className="px-2 py-2 font-medium">在线时间</th>
                 <th className="px-2 py-2 font-medium">创建时间</th>
                 <th className="px-2 py-2 font-medium">操作</th>
               </tr>
@@ -272,6 +273,7 @@ export default async function UsersPage({
                     <UserLocationMapButton username={user.username} displayName={user.displayName} longitude={user.longitude} latitude={user.latitude} />
                   </td>
                   <td className="px-2 py-3 text-slate-500">{user.locationAt ? new Date(user.locationAt).toLocaleString("zh-CN") : "-"}</td>
+                  <td className="px-2 py-3 text-slate-500">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "-"}</td>
                   <td className="px-2 py-3 text-slate-500">{new Date(user.createdAt).toLocaleString("zh-CN")}</td>
                   <td className="px-2 py-3">
                     <div className="flex items-center gap-2">
@@ -357,6 +359,7 @@ export default async function UsersPage({
                   <UserLocationMapButton username={user.username} displayName={user.displayName} longitude={user.longitude} latitude={user.latitude} />
                 </span>
               </p>
+              <p className="mt-1 text-xs text-slate-500">在线时间：{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "-"}</p>
             </li>
           ))}
         </ul>

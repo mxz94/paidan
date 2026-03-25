@@ -5,9 +5,11 @@ import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } fr
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
 import { canAccessMobile } from "@/lib/user-access";
+import { touchUserDailyActive } from "@/lib/user-activity";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
 import { MobileOrdersPanel } from "@/components/mobile-orders-panel";
 import { MobileAutoLocationRefresh } from "@/components/mobile-auto-location-refresh";
+import { OnlineHeartbeat } from "@/components/online-heartbeat";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +71,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
 
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true, tenantId: true, isDeleted: true, isDisabled: true },
+    select: { id: true, accessMode: true, longitude: true, latitude: true, displayName: true, tenantId: true, isDeleted: true, isDisabled: true, lastLoginAt: true },
   });
 
   if (!me || me.isDeleted || me.isDisabled) {
@@ -82,6 +84,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   if (!me.tenantId) {
     redirect("/login");
   }
+
+  await touchUserDailyActive(me.id, me.lastLoginAt);
 
   const params = await searchParams;
   const tab = ["new", "doing", "done"].includes(String(params.tab)) ? String(params.tab) : "new";
@@ -197,6 +201,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
     <main className="min-h-screen bg-slate-100 p-3 text-slate-900">
       <section className="mx-auto max-w-md space-y-3">
         <MobileAutoLocationRefresh enabled />
+        <OnlineHeartbeat />
         <MobileTopPanel
           displayName={me.displayName}
           latitude={me.latitude ?? null}

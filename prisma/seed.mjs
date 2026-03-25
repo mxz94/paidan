@@ -61,8 +61,16 @@ async function ensureSchema() {
       "username" TEXT NOT NULL,
       "passwordHash" TEXT NOT NULL,
       "displayName" TEXT NOT NULL,
+      "accessMode" TEXT NOT NULL DEFAULT 'SERVICE',
+      "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+      "isDisabled" BOOLEAN NOT NULL DEFAULT false,
       "tenantId" INTEGER,
       "roleId" INTEGER NOT NULL,
+      "storeId" INTEGER,
+      "longitude" REAL,
+      "latitude" REAL,
+      "locationAt" DATETIME,
+      "lastLoginAt" DATETIME,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "User_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
@@ -72,6 +80,7 @@ async function ensureSchema() {
   await ensureColumn("User", `"longitude" REAL`);
   await ensureColumn("User", `"latitude" REAL`);
   await ensureColumn("User", `"locationAt" DATETIME`);
+  await ensureColumn("User", `"lastLoginAt" DATETIME`);
   await ensureColumn("User", `"accessMode" TEXT NOT NULL DEFAULT 'SERVICE'`);
   await ensureColumn("User", `"isDeleted" BOOLEAN NOT NULL DEFAULT false`);
   await ensureColumn("User", `"isDisabled" BOOLEAN NOT NULL DEFAULT false`);
@@ -122,8 +131,17 @@ async function ensureSchema() {
       "phone" TEXT NOT NULL,
       "customerType" TEXT NOT NULL,
       "remark" TEXT,
+      "appointmentAt" DATETIME,
+      "handledPhone" TEXT,
+      "notHandledReason" TEXT,
       "photoUrl" TEXT,
+      "isDeleted" BOOLEAN NOT NULL DEFAULT false,
       "status" TEXT NOT NULL DEFAULT 'PENDING',
+      "packageId" INTEGER,
+      "claimedById" INTEGER,
+      "claimedAt" DATETIME,
+      "convertedToPreciseById" INTEGER,
+      "convertedToPreciseAt" DATETIME,
       "createdById" INTEGER NOT NULL,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -182,6 +200,14 @@ async function ensureSchema() {
   await ensureColumn("Store", `"isDeleted" BOOLEAN NOT NULL DEFAULT false`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_tenantId_idx" ON "Store"("tenantId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_managerUserId_idx" ON "Store"("managerUserId");`);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "SystemConfig" (
+      "key" TEXT NOT NULL PRIMARY KEY,
+      "value" TEXT,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }
 
 async function ensureTenantBuiltinRoles(tenantId, menus) {
@@ -228,8 +254,8 @@ async function ensureTenantBuiltinRoles(tenantId, menus) {
   });
   const saleRole = await prisma.role.upsert({
     where: { code: saleCode },
-    create: { code: saleCode, name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
-    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
+    create: { code: saleCode, name: "业务员", tenantId, isBuiltin: true, dataScope: "TENANT" },
+    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
 
   const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-delete-btn"];
@@ -389,6 +415,22 @@ async function main() {
       await prisma.package.update({ where: { id: existed.id }, data: { ...pkg, tenantId: defaultTenant.id } });
     }
   }
+
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
+    VALUES ('precise_daily_claim_limit', '3', CURRENT_TIMESTAMP)
+    ON CONFLICT("key") DO NOTHING;
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
+    VALUES ('service_daily_claim_limit', '20', CURRENT_TIMESTAMP)
+    ON CONFLICT("key") DO NOTHING;
+  `);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
+    VALUES ('claim_limit_disabled', '0', CURRENT_TIMESTAMP)
+    ON CONFLICT("key") DO NOTHING;
+  `);
 }
 
 main()

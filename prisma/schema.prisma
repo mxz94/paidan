@@ -26,6 +26,7 @@ model User {
   longitude    Float?
   latitude     Float?
   locationAt   DateTime?
+  lastLoginAt  DateTime?
   tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   role         Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
   store        Store?   @relation("StoreMembers", fields: [storeId], references: [id], onDelete: SetNull)

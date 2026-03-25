@@ -7,9 +7,10 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [showSupervisorEntryPicker, setShowSupervisorEntryPicker] = useState(false);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,6 +24,15 @@ export default function LoginPage() {
       });
 
       if (result?.ok) {
+        try {
+          const resp = await fetch("/api/auth/session", { cache: "no-store" });
+          const session = (await resp.json()) as { user?: { accessMode?: string; username?: string } };
+          const isAdminAccount = session?.user?.username === "admin";
+          if (session?.user?.accessMode === "SUPERVISOR" && !isAdminAccount) {
+            setShowSupervisorEntryPicker(true);
+            return;
+          }
+        } catch {}
         router.replace("/");
         router.refresh();
         return;
@@ -74,6 +84,37 @@ export default function LoginPage() {
           </button>
         </form>
       </section>
+
+      {showSupervisorEntryPicker ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-900">请选择进入端</h2>
+            <p className="mt-1 text-sm text-slate-600">主管账号可进入后台或客户端。</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  router.replace("/dashboard");
+                  router.refresh();
+                }}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                进入后台
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  router.replace("/mobile");
+                  router.refresh();
+                }}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                进入客户端
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

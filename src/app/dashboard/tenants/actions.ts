@@ -30,8 +30,8 @@ async function ensureTenantBuiltinRoles(tenantId: number) {
   });
   const saleRole = await prisma.role.upsert({
     where: { code: `TENANT_${tenantId}_SALE` },
-    create: { code: `TENANT_${tenantId}_SALE`, name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
-    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "OWN" },
+    create: { code: `TENANT_${tenantId}_SALE`, name: "业务员", tenantId, isBuiltin: true, dataScope: "TENANT" },
+    update: { name: "业务员", tenantId, isBuiltin: true, dataScope: "TENANT" },
   });
 
   const adminKeys = ["dashboard", "dispatch-order", "user-manage", "package-manage", "store-manage", "role-menu", "system-config", "perm-order-delete-btn"];

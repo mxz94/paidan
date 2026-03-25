@@ -7,6 +7,12 @@ export const SYSTEM_CONFIG_KEYS = {
   claimLimitDisabled: "claim_limit_disabled",
 } as const;
 
+export const SYSTEM_CONFIG_DEFAULTS: Record<string, string> = {
+  [SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit]: "3",
+  [SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit]: "20",
+  [SYSTEM_CONFIG_KEYS.claimLimitDisabled]: "0",
+};
+
 export async function ensureSystemConfigTable() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "SystemConfig" (
@@ -15,6 +21,14 @@ export async function ensureSystemConfigTable() {
       "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  for (const [key, value] of Object.entries(SYSTEM_CONFIG_DEFAULTS)) {
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
+      VALUES ('${key}', '${value}', CURRENT_TIMESTAMP)
+      ON CONFLICT("key") DO NOTHING;
+    `);
+  }
 }
 
 export async function getSystemConfigValues(keys: string[]) {

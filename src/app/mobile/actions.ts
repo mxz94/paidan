@@ -14,7 +14,8 @@ const DEFAULT_SERVICE_DAILY_LIMIT = 20;
 const END_REASON_OPTIONS = ["无效客资", "未见面", "已见面"] as const;
 const GEOCODE_MIN_INTERVAL_MS = 220;
 const GEOCODE_MAX_RETRY = 2;
-const APPOINTMENT_MAX_DAYS = 15;
+const RESCHEDULE_MAX_DAYS = 7;
+const CONVERT_APPOINTMENT_MAX_DAYS = 15;
 
 function normalizeMobilePhone(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -83,9 +84,9 @@ function createGeocodeThrottle(minIntervalMs: number) {
   };
 }
 
-function isAppointmentWithinFutureDays(value: Date) {
+function isConvertAppointmentWithinFutureDays(value: Date) {
   const now = new Date();
-  const maxAt = new Date(now.getTime() + APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
+  const maxAt = new Date(now.getTime() + CONVERT_APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
   const ts = value.getTime();
   return ts >= now.getTime() && ts <= maxAt.getTime();
 }
@@ -446,7 +447,7 @@ export async function rescheduleDispatchOrder(formData: FormData) {
     redirect(buildMobileQuery(formData, "doing", { op: "reschedule-empty" }));
   }
   const now = new Date();
-  const maxAt = new Date(now.getTime() + APPOINTMENT_MAX_DAYS * 24 * 60 * 60 * 1000);
+  const maxAt = new Date(now.getTime() + RESCHEDULE_MAX_DAYS * 24 * 60 * 60 * 1000);
   if (scheduleAt.getTime() < now.getTime()) {
     redirect(buildMobileQuery(formData, "doing", { op: "reschedule-range" }));
   }
@@ -542,7 +543,7 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   if (appointmentAt && Number.isNaN(appointmentAt.getTime())) {
     redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
   }
-  if (appointmentAt && !isAppointmentWithinFutureDays(appointmentAt)) {
+  if (appointmentAt && !isConvertAppointmentWithinFutureDays(appointmentAt)) {
     redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
   }
 
