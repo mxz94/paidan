@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 export async function saveRoleMenus(formData: FormData) {
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
+  const hasPermission = await hasMenuPermission(me.id, "role-menu");
+  if (!me.tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 

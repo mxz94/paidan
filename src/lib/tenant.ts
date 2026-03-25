@@ -49,3 +49,25 @@ export function hasStoreDataScope(roleCode: string, dataScope?: string | null) {
   }
   return (dataScope ?? "OWN") === "STORE";
 }
+
+export async function hasMenuPermission(userId: number, menuKey: string) {
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return false;
+  }
+  const hit = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      isDeleted: false,
+      isDisabled: false,
+      role: {
+        roleMenus: {
+          some: {
+            menu: { key: menuKey },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  return Boolean(hit);
+}

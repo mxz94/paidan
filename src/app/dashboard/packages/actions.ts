@@ -6,7 +6,7 @@ import { z } from "zod";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 const createPackageSchema = z.object({
   name: z.string().trim().min(2).max(40),
@@ -54,7 +54,8 @@ async function ensureTenantAdmin() {
   const session = await getAuthSession();
   if (!session?.user) redirect("/dashboard");
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) redirect("/dashboard");
+  const hasPermission = await hasMenuPermission(me.id, "package-manage");
+  if (!Number(me.tenantId) || !hasPermission) redirect("/dashboard");
   return me;
 }
 

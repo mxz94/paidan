@@ -1,7 +1,7 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { PackageCreateModal } from "@/components/package-create-modal";
 import { PackageEditModal } from "@/components/package-edit-modal";
 import { PackageImportModal } from "@/components/package-import-modal";
@@ -33,11 +33,12 @@ export default async function PackagesPage({ searchParams }: { searchParams: Sea
   }
 
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
+  const hasPermission = await hasMenuPermission(me.id, "package-manage");
+  if (!Number(me.tenantId) || !hasPermission) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
-        <p className="mt-2 text-sm text-slate-600">仅管理员可以新增套餐。</p>
+        <p className="mt-2 text-sm text-slate-600">当前角色未绑定“套餐管理”菜单权限。</p>
       </section>
     );
   }

@@ -8,7 +8,7 @@ import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
 import { ensureStoreTable, ensureUserManageColumns, ensureUserStoreColumn } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant } from "@/lib/tenant";
 import { normalizeAccessMode } from "@/lib/user-access";
 
 const createUserSchema = z.object({
@@ -102,18 +102,43 @@ async function ensureStoreSupervisorAvailable(params: {
   redirect(`/dashboard/users?err=store_supervisor&manager=${managerName}&storeName=${storeName}`);
 }
 
+async function ensureUserManagePermission() {
+  const session = await getAuthSession();
+  if (!session?.user?.id) {
+    redirect("/dashboard");
+  }
+  const me = await getSessionUserWithTenant();
+  if (!Number(me.tenantId)) {
+    redirect("/dashboard");
+  }
+
+  const hasPermission = await prisma.user.findFirst({
+    where: {
+      id: me.id,
+      tenantId: Number(me.tenantId),
+      role: {
+        roleMenus: {
+          some: {
+            menu: { key: "user-manage" },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+
+  if (!hasPermission) {
+    redirect("/dashboard");
+  }
+
+  return { session, me };
+}
+
 export async function createUser(formData: FormData) {
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
-  const session = await getAuthSession();
-  if (!session?.user) {
-    redirect("/dashboard");
-  }
-  const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
-    redirect("/dashboard");
-  }
+  const { me } = await ensureUserManagePermission();
 
   const longitudeInput = String(formData.get("longitude") ?? "").trim();
   const latitudeInput = String(formData.get("latitude") ?? "").trim();
@@ -192,14 +217,7 @@ export async function importUsers(formData: FormData) {
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
-  const session = await getAuthSession();
-  if (!session?.user) {
-    redirect("/dashboard");
-  }
-  const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
-    redirect("/dashboard");
-  }
+  const { me } = await ensureUserManagePermission();
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size <= 0) {
@@ -362,14 +380,7 @@ export async function updateUser(formData: FormData) {
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
-  const session = await getAuthSession();
-  if (!session?.user) {
-    redirect("/dashboard");
-  }
-  const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
-    redirect("/dashboard");
-  }
+  const { session, me } = await ensureUserManagePermission();
 
   const parsed = updateUserSchema.safeParse({
     userId: formData.get("userId"),
@@ -438,14 +449,7 @@ export async function updateUser(formData: FormData) {
 
 export async function toggleUserDisabled(formData: FormData) {
   await ensureUserManageColumns();
-  const session = await getAuthSession();
-  if (!session?.user?.id) {
-    redirect("/dashboard");
-  }
-  const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
-    redirect("/dashboard");
-  }
+  const { session, me } = await ensureUserManagePermission();
   const parsed = idOnlySchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) {
     redirect("/dashboard/users?err=invalid");
@@ -476,14 +480,7 @@ export async function toggleUserDisabled(formData: FormData) {
 
 export async function softDeleteUser(formData: FormData) {
   await ensureUserManageColumns();
-  const session = await getAuthSession();
-  if (!session?.user?.id) {
-    redirect("/dashboard");
-  }
-  const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
-    redirect("/dashboard");
-  }
+  const { session, me } = await ensureUserManagePermission();
   const parsed = idOnlySchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) {
     redirect("/dashboard/users?err=invalid");

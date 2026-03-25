@@ -2,7 +2,7 @@
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureSystemConfigTable, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
-import { isSuperAdminRole, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { saveSystemConfig } from "./actions";
 
 type SearchParams = Promise<{ saved?: string; err?: string }>;
@@ -20,7 +20,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   if (!session?.user?.id) {
     redirect("/login");
   }
-  if (!isTenantAdminRole(session.user.roleCode) || isSuperAdminRole(session.user.roleCode)) {
+  const me = await getSessionUserWithTenant();
+  const hasPermission = await hasMenuPermission(me.id, "system-config");
+  if (!Number(me.tenantId) || !hasPermission) {
     redirect("/dashboard");
   }
 

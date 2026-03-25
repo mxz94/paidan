@@ -2,18 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureSystemConfigTable, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
-import { isSuperAdminRole, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 const DEFAULT_PRECISE_LIMIT = 3;
 const DEFAULT_SERVICE_LIMIT = 20;
 
 export async function saveSystemConfig(formData: FormData) {
-  const session = await getAuthSession();
-
-  if (!session?.user?.id || !isTenantAdminRole(session.user.roleCode) || isSuperAdminRole(session.user.roleCode)) {
+  const me = await getSessionUserWithTenant();
+  const hasPermission = await hasMenuPermission(me.id, "system-config");
+  if (!Number(me.tenantId) || !hasPermission) {
     redirect("/dashboard");
   }
 

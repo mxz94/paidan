@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getAuthSession } from "@/lib/auth";
 import { ensureStoreTable } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 const createStoreSchema = z.object({
   name: z.string().trim().min(1).max(40),
@@ -27,7 +27,8 @@ async function ensureTenantAdmin() {
     redirect("/login");
   }
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
+  const hasPermission = await hasMenuPermission(me.id, "store-manage");
+  if (!Number(me.tenantId) || !hasPermission) {
     redirect("/dashboard");
   }
   return me;

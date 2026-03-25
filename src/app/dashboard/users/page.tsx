@@ -2,7 +2,7 @@
 import { getAuthSession } from "@/lib/auth";
 import { ensureStoreTable, ensureUserManageColumns, ensureUserStoreColumn } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant } from "@/lib/tenant";
 import { UserCreateModal } from "@/components/user-create-modal";
 import { UserEditModal } from "@/components/user-edit-modal";
 import { UserImportModal } from "@/components/user-import-modal";
@@ -65,11 +65,25 @@ export default async function UsersPage({
   }
 
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
+  const hasUserManageMenu = await prisma.user.findFirst({
+    where: {
+      id: me.id,
+      tenantId: Number(me.tenantId),
+      role: {
+        roleMenus: {
+          some: {
+            menu: { key: "user-manage" },
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!Number(me.tenantId) || !hasUserManageMenu) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
-        <p className="mt-2 text-sm text-slate-600">仅管理员可以新增用户并分配角色。</p>
+        <p className="mt-2 text-sm text-slate-600">当前角色未绑定“用户管理”菜单权限。</p>
       </section>
     );
   }

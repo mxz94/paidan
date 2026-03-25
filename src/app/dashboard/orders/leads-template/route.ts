@@ -1,12 +1,21 @@
 ﻿import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { getAuthSession } from "@/lib/auth";
-import { isTenantAdminRole } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const session = await getAuthSession();
 
-  if (!session?.user?.id || !isTenantAdminRole(session.user.roleCode)) {
+  const me = session?.user?.id
+    ? await prisma.user.findUnique({
+        where: { id: Number(session.user.id) },
+        select: {
+          tenantId: true,
+          role: { select: { roleMenus: { where: { menu: { key: "dispatch-order" } }, select: { menuId: true } } } },
+        },
+      })
+    : null;
+  if (!me || !me.tenantId || me.role.roleMenus.length === 0) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 

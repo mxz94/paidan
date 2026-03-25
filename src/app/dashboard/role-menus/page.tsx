@@ -1,7 +1,7 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { saveRoleMenus } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +10,12 @@ type SearchParams = Promise<{ role?: string; saved?: string; created?: string; e
 
 export default async function RoleMenusPage({ searchParams }: { searchParams: SearchParams }) {
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
+  const hasPermission = await hasMenuPermission(me.id, "role-menu");
+  if (!me.tenantId || !hasPermission) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
-        <p className="mt-2 text-sm text-slate-600">仅租户管理员可以配置角色权限。</p>
+        <p className="mt-2 text-sm text-slate-600">当前角色未绑定“角色管理”菜单权限。</p>
       </section>
     );
   }

@@ -26,9 +26,19 @@ export async function GET(request: Request) {
   }
   const me = await prisma.user.findUnique({
     where: { id: Number(session.user.id) },
-    select: { tenantId: true, role: { select: { code: true } } },
+    select: {
+      tenantId: true,
+      role: {
+        select: {
+          roleMenus: {
+            where: { menu: { key: "dispatch-order" } },
+            select: { menuId: true },
+          },
+        },
+      },
+    },
   });
-  if (!me || (!me.tenantId && me.role.code !== "SUPER_ADMIN")) {
+  if (!me || !me.tenantId || me.role.roleMenus.length === 0) {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 

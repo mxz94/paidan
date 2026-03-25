@@ -1,6 +1,6 @@
 ﻿import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { createRole } from "../actions";
 
 type SearchParams = Promise<{ err?: string }>;
@@ -16,7 +16,8 @@ export default async function NewRolePage({
   searchParams: SearchParams;
 }) {
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
+  const hasPermission = await hasMenuPermission(me.id, "role-menu");
+  if (!me.tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 

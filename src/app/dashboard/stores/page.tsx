@@ -2,7 +2,7 @@
 import { getAuthSession } from "@/lib/auth";
 import { ensureStoreTable } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { StoreCreateModal } from "@/components/store-create-modal";
 import { StoreEditModal } from "@/components/store-edit-modal";
 
@@ -24,11 +24,12 @@ export default async function StoresPage({ searchParams }: { searchParams: Searc
   }
 
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !Number(me.tenantId)) {
+  const hasPermission = await hasMenuPermission(me.id, "store-manage");
+  if (!Number(me.tenantId) || !hasPermission) {
     return (
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-xl font-bold">无权限访问</h1>
-        <p className="mt-2 text-sm text-slate-600">仅管理员可以维护门店信息。</p>
+        <p className="mt-2 text-sm text-slate-600">当前角色未绑定“门店管理”菜单权限。</p>
       </section>
     );
   }

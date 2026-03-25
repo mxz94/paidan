@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, isTenantAdminRole } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 const createRoleSchema = z.object({
   name: z.string().trim().min(2).max(30),
@@ -13,7 +13,8 @@ const createRoleSchema = z.object({
 
 export async function createRole(formData: FormData) {
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
+  const hasPermission = await hasMenuPermission(me.id, "role-menu");
+  if (!me.tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 
@@ -66,7 +67,8 @@ export async function createRole(formData: FormData) {
 
 export async function deleteRole(formData: FormData) {
   const me = await getSessionUserWithTenant();
-  if (!isTenantAdminRole(me.role.code) || !me.tenantId) {
+  const hasPermission = await hasMenuPermission(me.id, "role-menu");
+  if (!me.tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 
