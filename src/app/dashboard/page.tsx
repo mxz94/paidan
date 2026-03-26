@@ -262,7 +262,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const serviceEntryRows = [...serviceEntryRaw]
     .sort((a, b) => b._count._all - a._count._all)
-    .slice(0, 10)
     .map((x) => ({
       id: x.createdById,
       name: userMap.get(x.createdById)?.displayName || userMap.get(x.createdById)?.username || `用户#${x.createdById}`,
@@ -271,7 +270,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const serviceInvalidRows = [...serviceInvalidRaw]
     .sort((a, b) => b._count._all - a._count._all)
-    .slice(0, 10)
     .map((x) => ({
       id: x.createdById,
       name: userMap.get(x.createdById)?.displayName || userMap.get(x.createdById)?.username || `用户#${x.createdById}`,
@@ -280,12 +278,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const saleClaimRows = [...saleClaimRaw]
     .sort((a, b) => b._count._all - a._count._all)
-    .slice(0, 10)
     .map((x) => ({
       id: x.operatorId,
       name: userMap.get(x.operatorId)?.displayName || userMap.get(x.operatorId)?.username || `用户#${x.operatorId}`,
       count: x._count._all,
     }));
+
+  const serviceEntryTotal = serviceEntryRows.reduce((sum, item) => sum + item.count, 0);
+  const serviceInvalidTotal = serviceInvalidRows.reduce((sum, item) => sum + item.count, 0);
+  const saleClaimTotal = saleClaimRows.reduce((sum, item) => sum + item.count, 0);
 
   const storeIds = Array.from(
     new Set(
@@ -465,7 +466,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <h2 className="text-lg font-bold text-slate-900">客服录入排行</h2>
             <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {serviceEntryRows.length > 0 ? (
               serviceEntryRows.map((r, i) => (
                 <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -477,6 +478,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <p className="text-sm text-slate-500">暂无数据</p>
             )}
           </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
+            合计：<span className="text-blue-700">{serviceEntryTotal}</span> 条
+          </div>
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -484,7 +488,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <h2 className="text-lg font-bold text-slate-900">客服无效客资排行</h2>
             <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {serviceInvalidRows.length > 0 ? (
               serviceInvalidRows.map((r, i) => (
                 <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -496,6 +500,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <p className="text-sm text-slate-500">暂无数据</p>
             )}
           </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
+            合计：<span className="text-rose-700">{serviceInvalidTotal}</span> 条
+          </div>
         </article>
 
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -503,7 +510,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <h2 className="text-lg font-bold text-slate-900">业务员领取排行</h2>
             <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {saleClaimRows.length > 0 ? (
               saleClaimRows.map((r, i) => (
                 <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -514,6 +521,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             ) : (
               <p className="text-sm text-slate-500">暂无数据</p>
             )}
+          </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
+            合计：<span className="text-emerald-700">{saleClaimTotal}</span> 次
           </div>
         </article>
       </div>
