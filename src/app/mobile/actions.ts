@@ -29,6 +29,18 @@ function normalizeNotHandledReason(value: string) {
   return value.replace(/\s+/g, "").replace(/[\u3000]/g, "");
 }
 
+function isPreciseCustomerType(customerType: string | null | undefined) {
+  const text = String(customerType ?? "").trim();
+  return text === "精准" || (text.includes("精准") && !text.includes("客服") && !text.includes("客户"));
+}
+
+function parseClaimTypeFromRemark(remark: string | null | undefined): "PRECISE" | "SERVICE" | null {
+  const text = String(remark ?? "");
+  if (text.includes("[CLAIM_TYPE:PRECISE]")) return "PRECISE";
+  if (text.includes("[CLAIM_TYPE:SERVICE]")) return "SERVICE";
+  return null;
+}
+
 async function getOperatorTenantId(operatorId: number) {
   const user = await prisma.user.findUnique({
     where: { id: operatorId },
@@ -226,31 +238,46 @@ export async function claimDispatchOrder(formData: FormData) {
   });
   if (!targetOrder) redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
 
-  const isPreciseOrder = (targetOrder.customerType || "").includes("精准");
+  const isPreciseOrder = isPreciseCustomerType(targetOrder.customerType);
   if (!claimLimitDisabled) {
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-    const todayClaimedCount = await prisma.dispatchOrderRecord.count({
+    const todayClaims = await prisma.dispatchOrderRecord.findMany({
       where: {
         operatorId,
         tenantId,
         actionType: "CLAIM",
         createdAt: { gte: dayStart, lte: dayEnd },
-        order: isPreciseOrder
-          ? { customerType: { contains: "精准" } }
-          : { NOT: { customerType: { contains: "精准" } } },
+      },
+      select: {
+        remark: true,
+        order: { select: { customerType: true } },
       },
     });
+    const todayClaimedCount = todayClaims.filter((item) => {
+      const taggedType = parseClaimTypeFromRemark(item.remark);
+      if (taggedType) {
+        return isPreciseOrder ? taggedType === "PRECISE" : taggedType === "SERVICE";
+      }
+      const currentIsPrecise = isPreciseCustomerType(item.order?.customerType);
+      return isPreciseOrder ? currentIsPrecise : !currentIsPrecise;
+    }).length;
 
-    const personalPreciseLimit = Number(operatorConfig?.preciseClaimLimit ?? "");
-    const personalServiceLimit = Number(operatorConfig?.serviceClaimLimit ?? "");
+    const hasPersonalPreciseLimit =
+      operatorConfig?.preciseClaimLimit != null &&
+      Number.isInteger(Number(operatorConfig.preciseClaimLimit)) &&
+      Number(operatorConfig.preciseClaimLimit) >= 0;
+    const hasPersonalServiceLimit =
+      operatorConfig?.serviceClaimLimit != null &&
+      Number.isInteger(Number(operatorConfig.serviceClaimLimit)) &&
+      Number(operatorConfig.serviceClaimLimit) >= 0;
     const maxLimit = isPreciseOrder
-      ? Number.isInteger(personalPreciseLimit) && personalPreciseLimit >= 0
-        ? personalPreciseLimit
+      ? hasPersonalPreciseLimit
+        ? Number(operatorConfig?.preciseClaimLimit)
         : preciseLimit
-      : Number.isInteger(personalServiceLimit) && personalServiceLimit >= 0
-        ? personalServiceLimit
+      : hasPersonalServiceLimit
+        ? Number(operatorConfig?.serviceClaimLimit)
         : serviceLimit;
     if (todayClaimedCount >= maxLimit) {
       redirect(buildMobileQuery(formData, "new", { op: isPreciseOrder ? "claim-limit-precise" : "claim-limit-service" }));
@@ -280,7 +307,7 @@ export async function claimDispatchOrder(formData: FormData) {
           operatorId,
           tenantId,
           actionType: "CLAIM",
-          remark: "领取单据",
+          remark: `领取单据 [CLAIM_TYPE:${isPreciseOrder ? "PRECISE" : "SERVICE"}]`,
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },
