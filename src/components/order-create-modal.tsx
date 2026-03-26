@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
 import { composeRegionValue, getLuoyangTowns, type LuoyangRegionNode } from "@/lib/regions";
 
@@ -26,14 +26,11 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
   const [latitude, setLatitude] = useState("");
   const [district, setDistrict] = useState("");
   const [town, setTown] = useState("");
-  const [addressTips, setAddressTips] = useState<Array<{ name: string; address: string; longitude?: number; latitude?: number }>>([]);
-  const [showAddressTips, setShowAddressTips] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
   const isServiceUser = currentAccessMode === "SERVICE";
   const towns = getLuoyangTowns(district);
   const regionValue = composeRegionValue(district, town);
-  const amapWebKey = process.env.NEXT_PUBLIC_AMAP_KEY ?? "";
   const nowLocal = new Date();
   const toLocalInput = (value: Date) => {
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -47,61 +44,6 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
     if (prefix && addr) return `${prefix} ${addr}`;
     return prefix || addr;
   }, [address, regionValue]);
-
-  useEffect(() => {
-    const keyword = addressSearchSeed.trim();
-    if (!keyword || !amapWebKey) {
-      setAddressTips([]);
-      return;
-    }
-
-    const timer = window.setTimeout(async () => {
-      try {
-        const query = new URLSearchParams({
-          key: amapWebKey,
-          keywords: keyword,
-          city: "洛阳",
-          citylimit: "true",
-          datatype: "all",
-        });
-        const resp = await fetch(`https://restapi.amap.com/v3/assistant/inputtips?${query.toString()}`, {
-          cache: "no-store",
-        });
-        if (!resp.ok) {
-          setAddressTips([]);
-          return;
-        }
-        const json = (await resp.json()) as {
-          status?: string;
-          tips?: Array<{ name?: string; district?: string; address?: string; location?: string }>;
-        };
-        if (json.status !== "1" || !json.tips?.length) {
-          setAddressTips([]);
-          return;
-        }
-        const tips = json.tips
-          .filter((tip) => (tip.name || "").trim())
-          .slice(0, 8)
-          .map((tip) => {
-            const locationText = String(tip.location ?? "");
-            const [lngText, latText] = locationText.split(",");
-            const lng = Number(lngText);
-            const lat = Number(latText);
-            return {
-              name: String(tip.name ?? "").trim(),
-              address: `${String(tip.district ?? "").trim()}${String(tip.address ?? "").trim()}`.trim(),
-              longitude: Number.isFinite(lng) ? lng : undefined,
-              latitude: Number.isFinite(lat) ? lat : undefined,
-            };
-          });
-        setAddressTips(tips);
-      } catch {
-        setAddressTips([]);
-      }
-    }, 240);
-
-    return () => window.clearTimeout(timer);
-  }, [addressSearchSeed, amapWebKey]);
 
   return (
     <>
@@ -214,45 +156,24 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
                 </span>
                 <div className="relative flex items-center gap-2">
                   <div className="relative w-full">
-                  <input
-                    name="address"
+                    <input
+                      name="address"
                       value={address}
                       onChange={(event) => {
                         setAddress(event.currentTarget.value);
-                        setShowAddressTips(true);
                       }}
-                      onFocus={() => setShowAddressTips(true)}
-                      onBlur={() => {
-                        window.setTimeout(() => setShowAddressTips(false), 120);
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const trimmed = addressSearchSeed.trim();
+                          if (!trimmed) return;
+                          setAddress(trimmed);
+                        }
                       }}
                       required
-                      placeholder="请输入地址，可点击右侧地图图标查询"
+                      placeholder="请输入地址，回车后可点右侧地图图标搜索"
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                     />
-                    {showAddressTips && addressTips.length > 0 ? (
-                      <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                        {addressTips.map((tip, index) => (
-                          <button
-                            key={`${tip.name}-${tip.address}-${index}`}
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              const pickedAddress = `${tip.name}${tip.address}`.trim() || tip.name;
-                              setAddress(pickedAddress);
-                              if (tip.longitude != null && tip.latitude != null) {
-                                setLongitude(String(tip.longitude.toFixed(6)));
-                                setLatitude(String(tip.latitude.toFixed(6)));
-                              }
-                              setShowAddressTips(false);
-                            }}
-                            className="block w-full border-b border-slate-100 px-3 py-2 text-left text-xs text-slate-700 last:border-b-0 hover:bg-slate-50"
-                          >
-                            <p className="font-semibold text-slate-800">{tip.name}</p>
-                            <p className="mt-0.5 text-slate-500">{tip.address || "无详细地址"}</p>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                   <AmapPickerModal
                     iconOnly

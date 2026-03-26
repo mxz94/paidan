@@ -8,15 +8,6 @@ type PickResult = {
   latitude: number;
 };
 
-type SuggestionItem = {
-  name: string;
-  address: string;
-  location?: {
-    lng: number;
-    lat: number;
-  };
-};
-
 type Props = {
   initialAddress: string;
   initialLongitude?: number;
@@ -68,7 +59,7 @@ function loadAmapScript() {
 
     const script = document.createElement("script");
     script.id = "amap-jsapi";
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Geocoder,AMap.AutoComplete`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=AMap.Geocoder`;
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("地图脚本加载失败"));
@@ -90,13 +81,11 @@ export function AmapPickerModal({
   const [pickedLng, setPickedLng] = useState<number | undefined>(initialLongitude);
   const [pickedLat, setPickedLat] = useState<number | undefined>(initialLatitude);
   const [errorText, setErrorText] = useState("");
-  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
-  const autoCompleteRef = useRef<any>(null);
   const openingSearchedRef = useRef(false);
 
   const center = useMemo(() => {
@@ -126,10 +115,9 @@ export function AmapPickerModal({
         });
         mapRef.current = map;
         await new Promise<void>((resolve) => {
-          window.AMap.plugin(["AMap.Geocoder", "AMap.AutoComplete"], () => resolve());
+          window.AMap.plugin(["AMap.Geocoder"], () => resolve());
         });
         geocoderRef.current = new window.AMap.Geocoder({ city: "洛阳" });
-        autoCompleteRef.current = new window.AMap.AutoComplete({ city: "洛阳", citylimit: true });
 
         if (pickedLng != null && pickedLat != null) {
           markerRef.current = new window.AMap.Marker({
@@ -188,7 +176,6 @@ export function AmapPickerModal({
       }
       markerRef.current = null;
       geocoderRef.current = null;
-      autoCompleteRef.current = null;
       openingSearchedRef.current = false;
     };
   }, [autoSearchOnOpen, center, initialAddress, open, pickedLat, pickedLng]);
@@ -199,7 +186,6 @@ export function AmapPickerModal({
     setPickedAddress(initialAddress || "");
     setPickedLng(initialLongitude);
     setPickedLat(initialLatitude);
-    setSuggestions([]);
   }, [initialAddress, initialLatitude, initialLongitude, open]);
 
   const applyPickedPoint = (lng: number, lat: number, address: string) => {
@@ -207,7 +193,6 @@ export function AmapPickerModal({
     setPickedLat(lat);
     setPickedAddress(address);
     setQueryAddress(address);
-    setSuggestions([]);
 
     if (!markerRef.current && mapRef.current) {
       markerRef.current = new window.AMap.Marker({ map: mapRef.current });
@@ -221,52 +206,6 @@ export function AmapPickerModal({
     }
   };
 
-  const fetchSuggestions = (keyword: string) => {
-    if (!autoCompleteRef.current) return;
-    const input = keyword.trim();
-    if (!input) {
-      setSuggestions([]);
-      return;
-    }
-    autoCompleteRef.current.search(input, (status: string, result: any) => {
-      if (status !== "complete" || !result?.tips?.length) {
-        setSuggestions([]);
-        return;
-      }
-      const next = result.tips
-        .filter((tip: any) => tip?.name)
-        .slice(0, 8)
-        .map((tip: any) => ({
-          name: String(tip.name ?? ""),
-          address: String(tip.district ?? "") + String(tip.address ?? ""),
-          location: tip.location
-            ? {
-                lng: Number(tip.location.lng),
-                lat: Number(tip.location.lat),
-              }
-            : undefined,
-        }));
-      setSuggestions(next);
-    });
-  };
-
-  const selectSuggestion = (tip: SuggestionItem) => {
-    const keyword = `${tip.name}${tip.address}`.trim();
-    if (tip.location && Number.isFinite(tip.location.lng) && Number.isFinite(tip.location.lat)) {
-      applyPickedPoint(tip.location.lng, tip.location.lat, keyword || tip.name);
-      return;
-    }
-    if (!geocoderRef.current) return;
-    geocoderRef.current.getLocation(keyword || tip.name, (status: string, result: any) => {
-      if (status !== "complete" || !result?.geocodes?.length) {
-        setErrorText("该提示项未能定位，请尝试其他地址");
-        return;
-      }
-      const geocode = result.geocodes[0];
-      applyPickedPoint(Number(geocode.location.lng), Number(geocode.location.lat), geocode.formattedAddress || keyword);
-    });
-  };
-
   const searchAddress = () => {
     if (!queryAddress.trim()) {
       setErrorText("请输入地址后再搜索");
@@ -278,7 +217,6 @@ export function AmapPickerModal({
     }
 
     setErrorText("");
-    setSuggestions([]);
     geocoderRef.current.getLocation(queryAddress.trim(), (status: string, result: any) => {
       if (status !== "complete" || !result?.geocodes?.length) {
         setErrorText("未找到该地址，请尝试更详细地址");
@@ -336,10 +274,8 @@ export function AmapPickerModal({
                 <input
                   value={queryAddress}
                   onChange={(event) => {
-                    const next = event.currentTarget.value;
-                    setQueryAddress(next);
+                    setQueryAddress(event.currentTarget.value);
                     setErrorText("");
-                    fetchSuggestions(next);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -350,21 +286,6 @@ export function AmapPickerModal({
                   placeholder="输入地址后搜索，例如：洛阳市西工区王城大道"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
-                {suggestions.length > 0 ? (
-                  <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                    {suggestions.map((tip, index) => (
-                      <button
-                        key={`${tip.name}-${tip.address}-${index}`}
-                        type="button"
-                        onClick={() => selectSuggestion(tip)}
-                        className="block w-full border-b border-slate-100 px-3 py-2 text-left text-xs text-slate-700 last:border-b-0 hover:bg-slate-50"
-                      >
-                        <p className="font-semibold text-slate-800">{tip.name}</p>
-                        <p className="mt-0.5 text-slate-500">{tip.address || "无详细地址"}</p>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
               <button
                 type="button"
