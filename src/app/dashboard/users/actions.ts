@@ -20,6 +20,9 @@ const createUserSchema = z.object({
   storeId: z.coerce.number().int().positive(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
+  canClaimOrders: z.boolean().default(true),
+  preciseClaimLimit: z.coerce.number().int().min(0).optional(),
+  serviceClaimLimit: z.coerce.number().int().min(0).optional(),
 });
 
 const updateUserSchema = z.object({
@@ -28,6 +31,9 @@ const updateUserSchema = z.object({
   accessMode: z.enum(["SUPERVISOR", "SERVICE", "SALE"]),
   roleId: z.coerce.number().int().positive(),
   password: z.string().optional(),
+  canClaimOrders: z.boolean().default(true),
+  preciseClaimLimit: z.coerce.number().int().min(0).optional(),
+  serviceClaimLimit: z.coerce.number().int().min(0).optional(),
 });
 
 const idOnlySchema = z.object({
@@ -142,6 +148,8 @@ export async function createUser(formData: FormData) {
 
   const longitudeInput = String(formData.get("longitude") ?? "").trim();
   const latitudeInput = String(formData.get("latitude") ?? "").trim();
+  const preciseClaimLimitInput = String(formData.get("preciseClaimLimit") ?? "").trim();
+  const serviceClaimLimitInput = String(formData.get("serviceClaimLimit") ?? "").trim();
 
   const parsed = createUserSchema.safeParse({
     username: formData.get("username"),
@@ -152,6 +160,9 @@ export async function createUser(formData: FormData) {
     storeId: formData.get("storeId"),
     longitude: longitudeInput ? Number(longitudeInput) : undefined,
     latitude: latitudeInput ? Number(latitudeInput) : undefined,
+    canClaimOrders: String(formData.get("canClaimOrders") ?? "1") !== "0",
+    preciseClaimLimit: preciseClaimLimitInput ? Number(preciseClaimLimitInput) : undefined,
+    serviceClaimLimit: serviceClaimLimitInput ? Number(serviceClaimLimitInput) : undefined,
   });
 
   if (!parsed.success) {
@@ -203,6 +214,9 @@ export async function createUser(formData: FormData) {
       tenantId: Number(me.tenantId),
       longitude: parsed.data.longitude,
       latitude: parsed.data.latitude,
+      canClaimOrders: parsed.data.canClaimOrders,
+      preciseClaimLimit: parsed.data.preciseClaimLimit ?? null,
+      serviceClaimLimit: parsed.data.serviceClaimLimit ?? null,
       locationAt:
         parsed.data.longitude !== undefined && parsed.data.latitude !== undefined ? new Date() : null,
     },
@@ -388,6 +402,13 @@ export async function updateUser(formData: FormData) {
     accessMode: normalizeAccessMode(String(formData.get("userType") ?? "")),
     roleId: formData.get("roleId"),
     password: String(formData.get("password") ?? "").trim() || undefined,
+    canClaimOrders: String(formData.get("canClaimOrders") ?? "1") !== "0",
+    preciseClaimLimit: String(formData.get("preciseClaimLimit") ?? "").trim()
+      ? Number(formData.get("preciseClaimLimit"))
+      : undefined,
+    serviceClaimLimit: String(formData.get("serviceClaimLimit") ?? "").trim()
+      ? Number(formData.get("serviceClaimLimit"))
+      : undefined,
   });
   if (!parsed.success) {
     redirect("/dashboard/users?err=invalid");
@@ -439,12 +460,53 @@ export async function updateUser(formData: FormData) {
       displayName: parsed.data.displayName,
       accessMode: parsed.data.accessMode,
       roleId: parsed.data.roleId,
+      canClaimOrders: parsed.data.canClaimOrders,
+      preciseClaimLimit: parsed.data.preciseClaimLimit ?? null,
+      serviceClaimLimit: parsed.data.serviceClaimLimit ?? null,
       ...(passwordHash ? { passwordHash } : {}),
     },
   });
 
   revalidatePath("/dashboard/users");
   redirect("/dashboard/users?updated=1");
+}
+
+export async function toggleUserClaimEnabled(formData: FormData) {
+  await ensureUserManageColumns();
+  const { session, me } = await ensureUserManagePermission();
+  const parsed = idOnlySchema.safeParse({ userId: formData.get("userId") });
+  if (!parsed.success) {
+    redirect("/dashboard/users?err=invalid");
+  }
+  if (parsed.data.userId === Number(session.user.id)) {
+    redirect("/dashboard/users?err=self");
+  }
+
+  const targetRows = (await prisma.$queryRaw`
+    SELECT "id", "isDeleted", "accessMode", "canClaimOrders"
+    FROM "User"
+    WHERE "id" = ${parsed.data.userId}
+      AND "tenantId" = ${Number(me.tenantId)}
+    LIMIT 1
+  `) as Array<{ id: number; isDeleted: boolean; accessMode: string; canClaimOrders: boolean | number | null }>;
+  const target = targetRows[0];
+  if (!target || target.isDeleted) {
+    redirect("/dashboard/users?err=notfound");
+  }
+  if (target.accessMode !== "SALE") {
+    redirect("/dashboard/users?err=invalid");
+  }
+
+  const enabled =
+    target.canClaimOrders === true ||
+    target.canClaimOrders === 1;
+  await prisma.user.update({
+    where: { id: target.id },
+    data: { canClaimOrders: !enabled },
+  });
+
+  revalidatePath("/dashboard/users");
+  redirect(`/dashboard/users?claimToggled=${enabled ? "0" : "1"}`);
 }
 
 export async function toggleUserDisabled(formData: FormData) {
@@ -491,7 +553,14 @@ export async function softDeleteUser(formData: FormData) {
 
   const target = await prisma.user.findFirst({
     where: { id: parsed.data.userId, tenantId: Number(me.tenantId), isDeleted: false },
-    select: { id: true, username: true, displayName: true, role: { select: { code: true } } },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      accessMode: true,
+      storeId: true,
+      role: { select: { code: true } },
+    },
   });
   if (!target) {
     redirect("/dashboard/users?err=notfound");
@@ -500,12 +569,64 @@ export async function softDeleteUser(formData: FormData) {
     redirect("/dashboard/users?err=protected");
   }
 
-  await prisma.user.update({
-    where: { id: target.id },
-    data: { isDeleted: true, isDisabled: true },
+  await prisma.$transaction(async (tx) => {
+    if (target.accessMode === "SALE" && target.storeId) {
+      const supervisor = await tx.user.findFirst({
+        where: {
+          tenantId: Number(me.tenantId),
+          storeId: target.storeId,
+          accessMode: "SUPERVISOR",
+          isDeleted: false,
+          isDisabled: false,
+        },
+        select: { id: true, username: true, displayName: true },
+      });
+      if (!supervisor) {
+        redirect("/dashboard/users?err=delete_no_supervisor");
+      }
+
+      const doingOrders = await tx.dispatchOrder.findMany({
+        where: {
+          tenantId: Number(me.tenantId),
+          isDeleted: false,
+          status: "CLAIMED",
+          claimedById: target.id,
+        },
+        select: { id: true },
+      });
+
+      if (doingOrders.length > 0) {
+        const now = new Date();
+        const orderIds = doingOrders.map((item) => item.id);
+
+        await tx.dispatchOrder.updateMany({
+          where: { id: { in: orderIds } },
+          data: {
+            claimedById: supervisor.id,
+            claimedAt: now,
+          },
+        });
+
+        await tx.dispatchOrderRecord.createMany({
+          data: orderIds.map((orderId) => ({
+            tenantId: Number(me.tenantId),
+            orderId,
+            operatorId: supervisor.id,
+            actionType: "AUTO_TRANSFER",
+            remark: `用户删除自动移交：原业务员 ${target.displayName || target.username} 已删除，转交门店主管 ${supervisor.displayName || supervisor.username}`,
+          })),
+        });
+      }
+    }
+
+    await tx.user.update({
+      where: { id: target.id },
+      data: { isDeleted: true, isDisabled: true },
+    });
   });
 
   revalidatePath("/dashboard/users");
+  revalidatePath("/dashboard/orders");
   redirect("/dashboard/users?deleted=1");
 }
 

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
-import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
+import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns, ensureUserManageColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
@@ -165,6 +165,7 @@ async function geocodeAddressWithRetry(address: string, throttle: () => Promise<
 
 export async function claimDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
+  await ensureUserManageColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
@@ -190,6 +191,28 @@ export async function claimDispatchOrder(formData: FormData) {
   const serviceLimit =
     Number.isInteger(serviceLimitRaw) && serviceLimitRaw >= 0 ? serviceLimitRaw : DEFAULT_SERVICE_DAILY_LIMIT;
   const claimLimitDisabled = config.get(SYSTEM_CONFIG_KEYS.claimLimitDisabled) === "1";
+  const operatorConfigRows = (await prisma.$queryRaw`
+    SELECT "canClaimOrders", "preciseClaimLimit", "serviceClaimLimit"
+    FROM "User"
+    WHERE "id" = ${operatorId}
+      AND "tenantId" = ${tenantId}
+      AND "isDeleted" = false
+      AND "isDisabled" = false
+    LIMIT 1
+  `) as Array<{
+    canClaimOrders: boolean | number | null;
+    preciseClaimLimit: number | null;
+    serviceClaimLimit: number | null;
+  }>;
+  const operatorConfig = operatorConfigRows[0];
+  const canClaim =
+    operatorConfig &&
+    (operatorConfig.canClaimOrders === true ||
+      operatorConfig.canClaimOrders === 1 ||
+      operatorConfig.canClaimOrders == null);
+  if (!canClaim) {
+    redirect(buildMobileQuery(formData, "new", { op: "claim-disabled" }));
+  }
 
   const targetOrder = await prisma.dispatchOrder.findFirst({
     where: {
@@ -220,7 +243,15 @@ export async function claimDispatchOrder(formData: FormData) {
       },
     });
 
-    const maxLimit = isPreciseOrder ? preciseLimit : serviceLimit;
+    const personalPreciseLimit = Number(operatorConfig?.preciseClaimLimit ?? "");
+    const personalServiceLimit = Number(operatorConfig?.serviceClaimLimit ?? "");
+    const maxLimit = isPreciseOrder
+      ? Number.isInteger(personalPreciseLimit) && personalPreciseLimit >= 0
+        ? personalPreciseLimit
+        : preciseLimit
+      : Number.isInteger(personalServiceLimit) && personalServiceLimit >= 0
+        ? personalServiceLimit
+        : serviceLimit;
     if (todayClaimedCount >= maxLimit) {
       redirect(buildMobileQuery(formData, "new", { op: isPreciseOrder ? "claim-limit-precise" : "claim-limit-service" }));
     }

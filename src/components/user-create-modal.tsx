@@ -20,6 +20,7 @@ type Props = {
 
 export function UserCreateModal({ roles = [], stores = [], action }: Props) {
   const [open, setOpen] = useState(false);
+  const [userType, setUserType] = useState<"SUPERVISOR" | "SERVICE" | "SALE" | "">("");
   const safeRoles = Array.isArray(roles) ? roles : [];
   const safeStores = Array.isArray(stores) ? stores : [];
 
@@ -130,7 +131,8 @@ export function UserCreateModal({ roles = [], stores = [], action }: Props) {
                   <select
                     name="userType"
                     required
-                    defaultValue=""
+                    value={userType}
+                    onChange={(event) => setUserType(event.currentTarget.value as "SUPERVISOR" | "SERVICE" | "SALE" | "")}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                   >
                     <option value="" disabled>
@@ -140,6 +142,45 @@ export function UserCreateModal({ roles = [], stores = [], action }: Props) {
                     <option value="SERVICE">客服</option>
                     <option value="SALE">业务员</option>
                   </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm text-slate-600">抢单权限</span>
+                  <select
+                    name="canClaimOrders"
+                    defaultValue="1"
+                    disabled={userType !== "SALE"}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    <option value="1">允许抢单</option>
+                    <option value="0">禁止抢单</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm text-slate-600">精准每日领取上限（可空）</span>
+                  <input
+                    name="preciseClaimLimit"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    disabled={userType !== "SALE"}
+                    placeholder="为空则走系统默认"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm text-slate-600">客服每日领取上限（可空）</span>
+                  <input
+                    name="serviceClaimLimit"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    disabled={userType !== "SALE"}
+                    placeholder="为空则走系统默认"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
                 </label>
               </div>
 

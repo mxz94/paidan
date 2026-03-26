@@ -10,6 +10,7 @@ import {
   rescheduleDispatchOrder,
 } from "@/app/mobile/actions";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
 
 type RecordItem = {
@@ -369,12 +370,12 @@ export function MobileOrdersPanel({
                   <form action={claimDispatchOrder}>
                     <input type="hidden" name="orderId" value={item.id} />
                     <input type="hidden" name="region" value={selectedRegion} />
-                    <button
-                      type="submit"
-                      className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 active:scale-[0.98]"
+                    <FormSubmitButton
+                      pendingText="领取中..."
+                      className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700 transition hover:bg-orange-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       领取
-                    </button>
+                    </FormSubmitButton>
                   </form>
                 </div>
               ) : (
@@ -510,12 +511,12 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
-                      <button
-                        type="submit"
-                        className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
+                      <FormSubmitButton
+                        pendingText="提交中..."
+                        className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         确认已办理
-                      </button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
 
@@ -551,12 +552,12 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
-                      <button
-                        type="submit"
-                        className="w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white"
+                      <FormSubmitButton
+                        pendingText="提交中..."
+                        className="w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         确认不办理
-                      </button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
 
@@ -616,12 +617,12 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
-                      <button
-                        type="submit"
-                        className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+                      <FormSubmitButton
+                        pendingText="提交中..."
+                        className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         提交改约
-                      </button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
 
@@ -698,12 +699,12 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
-                      <button
-                        type="submit"
-                        className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"
+                      <FormSubmitButton
+                        pendingText="提交中..."
+                        className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         确认转精准
-                      </button>
+                      </FormSubmitButton>
                     </form>
                   ) : null}
                 </div>

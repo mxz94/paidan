@@ -13,6 +13,9 @@ type Props = {
   defaultAccessMode: "SUPERVISOR" | "SERVICE" | "SALE";
   defaultRoleId: number;
   defaultStoreName: string;
+  defaultCanClaimOrders?: boolean;
+  defaultPreciseClaimLimit?: number | null;
+  defaultServiceClaimLimit?: number | null;
   roles: RoleOption[];
   action: (formData: FormData) => void | Promise<void>;
 };
@@ -23,10 +26,14 @@ export function UserEditModal({
   defaultAccessMode,
   defaultRoleId,
   defaultStoreName,
+  defaultCanClaimOrders = true,
+  defaultPreciseClaimLimit = null,
+  defaultServiceClaimLimit = null,
   roles = [],
   action,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [userType, setUserType] = useState<"SUPERVISOR" | "SERVICE" | "SALE">(defaultAccessMode);
   const safeRoles = Array.isArray(roles) ? roles : [];
   const firstRoleId = (() => {
     for (const role of safeRoles) {
@@ -35,10 +42,6 @@ export function UserEditModal({
     return null;
   })();
   const fallbackRoleId = safeRoles.find((role) => role.id === defaultRoleId)?.id ?? firstRoleId;
-  const safeAccessMode =
-    defaultAccessMode === "SUPERVISOR" || defaultAccessMode === "SALE" || defaultAccessMode === "SERVICE"
-      ? defaultAccessMode
-      : "SERVICE";
 
   return (
     <>
@@ -112,13 +115,55 @@ export function UserEditModal({
                 <select
                   name="userType"
                   required
-                  defaultValue={safeAccessMode}
+                  value={userType}
+                  onChange={(event) => setUserType(event.currentTarget.value as "SUPERVISOR" | "SERVICE" | "SALE")}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 >
                   <option value="SUPERVISOR">主管</option>
                   <option value="SERVICE">客服</option>
                   <option value="SALE">业务员</option>
                 </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm text-slate-600">抢单权限</span>
+                <select
+                  name="canClaimOrders"
+                  defaultValue={defaultCanClaimOrders ? "1" : "0"}
+                  disabled={userType !== "SALE"}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  <option value="1">允许抢单</option>
+                  <option value="0">禁止抢单</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm text-slate-600">精准每日领取上限（可空）</span>
+                <input
+                  name="preciseClaimLimit"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  defaultValue={defaultPreciseClaimLimit ?? ""}
+                  disabled={userType !== "SALE"}
+                  placeholder="为空则走系统默认"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm text-slate-600">客服每日领取上限（可空）</span>
+                <input
+                  name="serviceClaimLimit"
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  defaultValue={defaultServiceClaimLimit ?? ""}
+                  disabled={userType !== "SALE"}
+                  placeholder="为空则走系统默认"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                />
               </label>
 
               <label className="block">

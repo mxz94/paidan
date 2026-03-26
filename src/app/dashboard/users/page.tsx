@@ -23,6 +23,7 @@ type SearchParams = Promise<{
   accessMode?: string;
   manager?: string;
   storeName?: string;
+  claimToggled?: string;
 }>;
 
 const errorText: Record<string, string> = {
@@ -37,6 +38,7 @@ const errorText: Record<string, string> = {
   self: "不能禁用或删除当前登录用户。",
   notfound: "用户不存在或已删除。",
   store_supervisor: "该门店已有主管，请先调整门店主管后再试。",
+  delete_no_supervisor: "该业务员所属门店没有可用主管，无法自动接收进行中单据，请先配置主管后再删除。",
   protected: "系统管理员默认不可编辑、禁用或删除。",
 };
 
@@ -137,6 +139,28 @@ export default async function UsersPage({
     skip: (currentPage - 1) * pageSize,
     take: pageSize,
   });
+  const claimConfigs = users.length
+    ? ((await prisma.$queryRawUnsafe(
+        `SELECT "id", "canClaimOrders", "preciseClaimLimit", "serviceClaimLimit"
+         FROM "User"
+         WHERE "id" IN (${users.map((x) => Number(x.id)).join(",")})`,
+      )) as Array<{
+        id: number;
+        canClaimOrders: boolean | number | null;
+        preciseClaimLimit: number | null;
+        serviceClaimLimit: number | null;
+      }>)
+    : [];
+  const claimConfigMap = new Map(
+    claimConfigs.map((item) => [
+      item.id,
+      {
+        canClaimOrders: item.canClaimOrders === true || item.canClaimOrders === 1 || item.canClaimOrders == null,
+        preciseClaimLimit: item.preciseClaimLimit,
+        serviceClaimLimit: item.serviceClaimLimit,
+      },
+    ]),
+  );
 
   const mapUsers = await prisma.user.findMany({
     where: queryWhere,
@@ -194,6 +218,8 @@ export default async function UsersPage({
         {params.disabled === "1" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">用户已禁用</p> : null}
         {params.disabled === "0" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">用户已启用</p> : null}
         {params.deleted === "1" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">用户已删除（假删除）</p> : null}
+        {params.claimToggled === "1" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">已允许该业务员抢单</p> : null}
+        {params.claimToggled === "0" ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">已禁止该业务员抢单</p> : null}
         {Number(params.imported ?? 0) > 0 ? (
           <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">用户导入成功，共 {Number(params.imported)} 条</p>
         ) : null}
@@ -254,6 +280,9 @@ export default async function UsersPage({
                 <th className="px-2 py-2 font-medium">角色</th>
                 <th className="px-2 py-2 font-medium">门店</th>
                 <th className="px-2 py-2 font-medium">用户类型</th>
+                <th className="px-2 py-2 font-medium">抢单权限</th>
+                <th className="px-2 py-2 font-medium">精准上限</th>
+                <th className="px-2 py-2 font-medium">客服上限</th>
                 <th className="px-2 py-2 font-medium">状态</th>
                 <th className="px-2 py-2 font-medium">经纬度</th>
                 <th className="px-2 py-2 font-medium">定位更新时间</th>
@@ -279,6 +308,15 @@ export default async function UsersPage({
                   <td className="px-2 py-3">{user.store?.name || "-"}</td>
                   <td className="px-2 py-3">{user.accessMode === "SUPERVISOR" ? "主管" : user.accessMode === "SALE" ? "业务员" : "客服"}</td>
                   <td className="px-2 py-3">
+                    {user.accessMode === "SALE"
+                      ? claimConfigMap.get(user.id)?.canClaimOrders === false
+                        ? "禁止"
+                        : "允许"
+                      : "-"}
+                  </td>
+                  <td className="px-2 py-3">{claimConfigMap.get(user.id)?.preciseClaimLimit ?? "默认"}</td>
+                  <td className="px-2 py-3">{claimConfigMap.get(user.id)?.serviceClaimLimit ?? "默认"}</td>
+                  <td className="px-2 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${user.isDisabled ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
                       {user.isDisabled ? "禁用" : "启用"}
                     </span>
@@ -302,6 +340,9 @@ export default async function UsersPage({
                           defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                           defaultRoleId={user.roleId}
                           defaultStoreName={user.store?.name ?? "-"}
+                          defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
+                          defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
+                          defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
                           roles={roles.map((item) => ({ id: item.id, name: item.name }))}
                           action={async (formData) => {
                             "use server";
@@ -317,6 +358,9 @@ export default async function UsersPage({
                             defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                             defaultRoleId={user.roleId}
                             defaultStoreName={user.store?.name ?? "-"}
+                            defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
+                            defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
+                            defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
                             roles={roles.map((item) => ({ id: item.id, name: item.name }))}
                             action={async (formData) => {
                               "use server";
@@ -324,6 +368,32 @@ export default async function UsersPage({
                               await updateUser(formData);
                             }}
                           />
+                          <form
+                            action={async (formData) => {
+                              "use server";
+                              const { toggleUserClaimEnabled } = await import("./actions");
+                              await toggleUserClaimEnabled(formData);
+                            }}
+                          >
+                            <input type="hidden" name="userId" value={user.id} />
+                            <button
+                              type="submit"
+                              disabled={user.accessMode !== "SALE"}
+                              className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                                user.accessMode !== "SALE"
+                                  ? "cursor-not-allowed border-slate-200 text-slate-300"
+                                  : claimConfigMap.get(user.id)?.canClaimOrders === false
+                                    ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                    : "border-rose-200 text-rose-700 hover:bg-rose-50"
+                              }`}
+                            >
+                              {user.accessMode !== "SALE"
+                                ? "仅业务员"
+                                : claimConfigMap.get(user.id)?.canClaimOrders === false
+                                  ? "允许抢单"
+                                  : "禁止抢单"}
+                            </button>
+                          </form>
                           <form
                             action={async (formData) => {
                               "use server";
@@ -366,6 +436,9 @@ export default async function UsersPage({
               <p className="mt-1 text-xs text-slate-500">角色：{user.role.name}</p>
               <p className="mt-1 text-xs text-slate-500">门店：{user.store?.name || "-"}</p>
               <p className="mt-1 text-xs text-slate-500">用户类型：{user.accessMode === "SUPERVISOR" ? "主管" : user.accessMode === "SALE" ? "业务员" : "客服"}</p>
+              <p className="mt-1 text-xs text-slate-500">抢单权限：{user.accessMode === "SALE" ? (claimConfigMap.get(user.id)?.canClaimOrders === false ? "禁止" : "允许") : "-"}</p>
+              <p className="mt-1 text-xs text-slate-500">精准上限：{claimConfigMap.get(user.id)?.preciseClaimLimit ?? "默认"}</p>
+              <p className="mt-1 text-xs text-slate-500">客服上限：{claimConfigMap.get(user.id)?.serviceClaimLimit ?? "默认"}</p>
               <p className="mt-1 text-xs text-slate-500">状态：{user.isDisabled ? "禁用" : "启用"}</p>
               <p className="mt-1 text-xs text-slate-500">
                 经纬度：

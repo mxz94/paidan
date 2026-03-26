@@ -52,6 +52,7 @@ const opMessage: Record<string, { text: string; cls: string }> = {
   "convert-date": { text: "转精准失败：约定时间格式不正确", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-precise": { text: "今日精准客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
   "claim-limit-service": { text: "今日客服客资领取次数已达上限", cls: "bg-rose-50 text-rose-700" },
+  "claim-disabled": { text: "该账号已被禁止抢单，请联系管理员", cls: "bg-rose-50 text-rose-700" },
   file: { text: "上传失败：图片不能超过 10MB", cls: "bg-rose-50 text-rose-700" },
   "profile-pwd1": { text: "个人中心：密码修改成功", cls: "bg-emerald-50 text-emerald-700" },
   "profile-pwd0": { text: "个人中心：请填写完整密码信息", cls: "bg-rose-50 text-rose-700" },

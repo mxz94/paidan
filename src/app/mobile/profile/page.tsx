@@ -1,9 +1,10 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAccessMobile } from "@/lib/user-access";
 import { touchUserDailyActive } from "@/lib/user-activity";
+import { FormSubmitButton } from "@/components/form-submit-button";
 import { LogoutButton } from "@/components/logout-button";
 import { OnlineHeartbeat } from "@/components/online-heartbeat";
 import { updateMobileProfilePassword } from "../actions";
@@ -88,12 +89,12 @@ export default async function MobileProfilePage({ searchParams }: { searchParams
               placeholder="确认新密码"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+            <FormSubmitButton
+              pendingText="提交中..."
+              className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               修改密码
-            </button>
+            </FormSubmitButton>
           </form>
           <div className="mt-3">
             <LogoutButton />

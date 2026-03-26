@@ -20,6 +20,9 @@ model User {
   accessMode   String   @default("SERVICE")
   isDeleted    Boolean  @default(false)
   isDisabled   Boolean  @default(false)
+  canClaimOrders Boolean @default(true)
+  preciseClaimLimit Int?
+  serviceClaimLimit Int?
   tenantId     Int?
   roleId       Int
   storeId      Int?

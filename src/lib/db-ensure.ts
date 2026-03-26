@@ -103,6 +103,15 @@ export async function ensureUserManageColumns() {
   if (!names.has("lastLoginAt")) {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME;`);
   }
+  if (!names.has("canClaimOrders")) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "canClaimOrders" BOOLEAN NOT NULL DEFAULT true;`);
+  }
+  if (!names.has("preciseClaimLimit")) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "preciseClaimLimit" INTEGER;`);
+  }
+  if (!names.has("serviceClaimLimit")) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "serviceClaimLimit" INTEGER;`);
+  }
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 }
