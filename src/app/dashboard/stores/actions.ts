@@ -136,6 +136,20 @@ export async function deleteStore(formData: FormData) {
     redirect("/dashboard/stores?err=has_users");
   }
 
+  const relatedOrderCount = await prisma.dispatchOrder.count({
+    where: {
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      OR: [
+        { createdBy: { storeId: parsed.data.storeId } },
+        { claimedBy: { is: { storeId: parsed.data.storeId } } },
+      ],
+    },
+  });
+  if (relatedOrderCount > 0) {
+    redirect("/dashboard/stores?err=has_orders");
+  }
+
   const deleted = await prisma.store.updateMany({
     where: {
       id: parsed.data.storeId,

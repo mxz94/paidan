@@ -41,6 +41,17 @@ function parseClaimTypeFromRemark(remark: string | null | undefined): "PRECISE" 
   return null;
 }
 
+function getShanghaiDayRange(now = new Date()) {
+  const offsetMs = 8 * 60 * 60 * 1000;
+  const shifted = new Date(now.getTime() + offsetMs);
+  const y = shifted.getUTCFullYear();
+  const m = shifted.getUTCMonth();
+  const d = shifted.getUTCDate();
+  const dayStartUtc = new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - offsetMs);
+  const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { dayStart: dayStartUtc, dayEnd: dayEndUtc };
+}
+
 async function getOperatorTenantId(operatorId: number) {
   const user = await prisma.user.findUnique({
     where: { id: operatorId },
@@ -240,9 +251,7 @@ export async function claimDispatchOrder(formData: FormData) {
 
   const isPreciseOrder = isPreciseCustomerType(targetOrder.customerType);
   if (!claimLimitDisabled) {
-    const now = new Date();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const { dayStart, dayEnd } = getShanghaiDayRange();
     const todayClaims = await prisma.dispatchOrderRecord.findMany({
       where: {
         operatorId,

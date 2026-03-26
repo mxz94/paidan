@@ -13,6 +13,7 @@ const errorText: Record<string, string> = {
   exists: "当前租户下门店名称已存在。",
   notfound: "门店不存在或已被删除。",
   has_users: "该门店下仍有用户，禁止删除。请先调整或移除门店用户。",
+  has_orders: "该门店仍有关联单据，禁止删除。请先处理相关单据。",
 };
 
 export default async function StoresPage({ searchParams }: { searchParams: SearchParams }) {

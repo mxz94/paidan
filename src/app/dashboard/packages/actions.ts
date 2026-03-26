@@ -283,7 +283,13 @@ export async function deletePackage(formData: FormData) {
   const pkg = await prisma.package.findFirst({ where: { id: packageId, tenantId: Number(me.tenantId) }, select: { id: true } });
   if (!pkg) redirect("/dashboard/packages?err=not_found");
 
-  const hasRelatedOrders = await prisma.dispatchOrder.count({ where: { packageId } });
+  const hasRelatedOrders = await prisma.dispatchOrder.count({
+    where: {
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      packageId,
+    },
+  });
   if (hasRelatedOrders > 0) redirect("/dashboard/packages?err=has_orders");
 
   await prisma.package.delete({ where: { id: packageId } });
