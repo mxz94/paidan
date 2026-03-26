@@ -12,7 +12,7 @@ declare module "next-auth" {
     loginTarget: string;
     tenantId: string;
     tenantCode: string;
-    sessionToken: string;
+    sessionToken?: string;
   }
 
   interface Session {
@@ -26,7 +26,7 @@ declare module "next-auth" {
       loginTarget: string;
       tenantId: string;
       tenantCode: string;
-      sessionToken: string;
+      sessionToken?: string;
     };
   }
 }
@@ -42,6 +42,6 @@ declare module "next-auth/jwt" {
     loginTarget: string;
     tenantId: string;
     tenantCode: string;
-    sessionToken: string;
+    sessionToken?: string;
   }
 }

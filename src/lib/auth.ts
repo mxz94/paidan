@@ -1,6 +1,4 @@
-﻿import { randomUUID } from "crypto";
-import { getServerSession, type NextAuthOptions } from "next-auth";
-import type { JWT } from "next-auth/jwt";
+﻿import { getServerSession, type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -12,21 +10,6 @@ const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 });
-
-function buildLoggedOutToken(): JWT {
-  return {
-    id: "",
-    roleCode: "",
-    roleName: "",
-    roleDataScope: "TENANT",
-    username: "",
-    accessMode: "SERVICE",
-    loginTarget: "auto",
-    tenantId: "",
-    tenantCode: "",
-    sessionToken: "",
-  } as JWT;
-}
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -70,12 +53,10 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const nextSessionToken = randomUUID();
         await prisma.user.update({
           where: { id: user.id },
           data: {
             lastLoginAt: new Date(),
-            sessionToken: nextSessionToken,
           },
         });
 
@@ -90,7 +71,6 @@ export const authOptions: NextAuthOptions = {
           loginTarget: "auto",
           tenantId: user.tenantId ? String(user.tenantId) : "",
           tenantCode: user.tenant?.code ?? "",
-          sessionToken: nextSessionToken,
         };
       },
     }),
@@ -107,31 +87,7 @@ export const authOptions: NextAuthOptions = {
         token.loginTarget = user.loginTarget;
         token.tenantId = user.tenantId;
         token.tenantCode = user.tenantCode;
-        token.sessionToken = user.sessionToken;
-        return token;
       }
-
-      const userId = Number(token.id);
-      const sessionToken = String(token.sessionToken ?? "");
-      if (!Number.isInteger(userId) || userId <= 0 || !sessionToken) {
-        return buildLoggedOutToken();
-      }
-
-      await ensureUserManageColumns();
-      const currentUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { isDeleted: true, isDisabled: true, sessionToken: true },
-      });
-      if (
-        !currentUser ||
-        currentUser.isDeleted ||
-        currentUser.isDisabled ||
-        !currentUser.sessionToken ||
-        currentUser.sessionToken !== sessionToken
-      ) {
-        return buildLoggedOutToken();
-      }
-
       return token;
     },
     async session({ session, token }) {
@@ -145,7 +101,6 @@ export const authOptions: NextAuthOptions = {
         session.user.loginTarget = String(token.loginTarget ?? "auto");
         session.user.tenantId = String(token.tenantId ?? "");
         session.user.tenantCode = String(token.tenantCode ?? "");
-        session.user.sessionToken = String(token.sessionToken ?? "");
       }
       return session;
     },
