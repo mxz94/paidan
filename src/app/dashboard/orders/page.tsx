@@ -59,24 +59,30 @@ const statusLabel: Record<string, string> = {
   ENDED: "不办理",
 };
 
-function customerTypeBadge(customerType: string) {
+function customerTypeBadge(customerType: string, isImportant = false) {
   const text = (customerType || "").trim();
   if (!text) {
     return <span className="text-slate-400">-</span>;
   }
   if (text.includes("精准")) {
+    const className = isImportant
+      ? "inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-rose-500"
+      : "inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200";
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className={className}>
+        <span className={`h-1.5 w-1.5 rounded-full ${isImportant ? "bg-white" : "bg-emerald-500"}`} />
         <span>精准</span>
       </span>
     );
   }
-  if (text.includes("客服") || text.includes("客户")) {
+  if (text.includes("客服")) {
+    const className = isImportant
+      ? "inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-rose-500"
+      : "inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200";
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200">
-        <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-        <span>客户</span>
+      <span className={className}>
+        <span className={`h-1.5 w-1.5 rounded-full ${isImportant ? "bg-white" : "bg-blue-500"}`} />
+        <span>客服</span>
       </span>
     );
   }
@@ -689,7 +695,7 @@ export default async function OrdersPage({
                       {item.address || "-"}
                     </div>
                   </td>
-                  <td className="px-3 py-3">{customerTypeBadge(item.customerType || "")}</td>
+                  <td className="px-3 py-3">{customerTypeBadge(item.customerType || "", item.isImportant)}</td>
                   <td className="px-3 py-3">
                     <OrderLocationMapButton
                       title={item.title}

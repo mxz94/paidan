@@ -106,7 +106,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const orderStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const pendingTimeoutStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const claimTimeoutStoreWhere = activeStoreId ? { claimedBy: { is: { storeId: activeStoreId } } } : {};
-  const recordStoreWhereByOperator = activeStoreId ? { operator: { storeId: activeStoreId } } : {};
   const recordStoreWhereByOrder = activeStoreId ? { order: { createdBy: { storeId: activeStoreId } } } : {};
   const before24h = new Date(anchor.getTime() - 24 * 60 * 60 * 1000);
   const before72h = new Date(anchor.getTime() - 72 * 60 * 60 * 1000);
@@ -133,9 +132,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         isDeleted: false,
         ...tenantWhere,
-        ...orderStoreWhere,
         createdAt: { gte: range.start, lte: range.end },
-        createdBy: { accessMode: { in: ["SERVICE", "SUPERVISOR"] }, isDeleted: false },
+        createdBy: {
+          accessMode: { in: ["SERVICE", "SUPERVISOR"] },
+          isDeleted: false,
+          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+        },
       },
       _count: { _all: true },
     }),
@@ -144,11 +146,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         isDeleted: false,
         ...tenantWhere,
-        ...orderStoreWhere,
         status: "ENDED",
         notHandledReason: { contains: "无效客资" },
         updatedAt: { gte: range.start, lte: range.end },
-        createdBy: { accessMode: { in: ["SERVICE", "SUPERVISOR"] }, isDeleted: false },
+        createdBy: {
+          accessMode: { in: ["SERVICE", "SUPERVISOR"] },
+          isDeleted: false,
+          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+        },
       },
       _count: { _all: true },
     }),
@@ -157,10 +162,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         actionType: "CLAIM",
         ...tenantWhere,
-        ...recordStoreWhereByOperator,
         ...recordStoreWhereByOrder,
         createdAt: { gte: range.start, lte: range.end },
-        operator: { accessMode: { in: ["SALE", "SUPERVISOR"] }, isDeleted: false },
+        operator: {
+          accessMode: { in: ["SALE", "SUPERVISOR"] },
+          isDeleted: false,
+          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+        },
       },
       _count: { _all: true },
     }),

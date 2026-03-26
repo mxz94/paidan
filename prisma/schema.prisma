@@ -105,6 +105,7 @@ model DispatchOrder {
   appointmentAt DateTime?
   handledPhone  String?
   notHandledReason String?
+  isImportant    Boolean  @default(false)
   photoUrl      String?
   isDeleted     Boolean  @default(false)
   status        String   @default("PENDING")

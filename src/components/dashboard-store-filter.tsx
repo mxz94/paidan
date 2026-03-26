@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -30,7 +30,7 @@ export function DashboardStoreFilter({ stores, activeStoreId, period }: Props) {
         next.set("period", period);
         router.push(`${pathname}?${next.toString()}`);
       }}
-      className="h-9 min-w-[150px] rounded-xl border border-cyan-300/40 bg-cyan-400/10 px-2 text-sm text-cyan-100 outline-none"
+      className="h-9 min-w-[160px] rounded-xl border border-cyan-300/40 bg-white px-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-cyan-300/40"
     >
       <option value="">全部门店</option>
       {stores.map((store) => (
@@ -41,4 +41,3 @@ export function DashboardStoreFilter({ stores, activeStoreId, period }: Props) {
     </select>
   );
 }
-

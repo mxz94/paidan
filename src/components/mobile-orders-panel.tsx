@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   claimDispatchOrder,
   convertDispatchOrderToPrecise,
@@ -33,6 +34,7 @@ type OrderItem = {
   address: string;
   region: string;
   customerType: string;
+  isImportant: boolean;
   phone: string;
   handledPhone: string;
   status: string;
@@ -81,22 +83,54 @@ function buildAmapNavUrl(item: OrderItem) {
   return `https://uri.amap.com/search?keyword=${encodeURIComponent(keyword)}&src=paidan&callnative=1`;
 }
 
-function customerTypeBadge(customerType: string) {
+function customerTypeBadge(
+  customerType: string,
+  options?: {
+    highlighted?: boolean;
+    clickable?: boolean;
+    onClick?: () => void;
+  },
+) {
   const text = (customerType || "").trim();
   if (!text) return null;
+  const highlighted = Boolean(options?.highlighted);
+  const clickable = Boolean(options?.clickable);
+  const onClick = options?.onClick;
   if (text.includes("精准")) {
+    const className = highlighted
+      ? "inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-rose-500"
+      : "inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200";
+    if (clickable) {
+      return (
+        <button type="button" onClick={onClick} className={`${className} transition active:scale-[0.98]`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${highlighted ? "bg-white" : "bg-emerald-500"}`} />
+          <span>精准</span>
+        </button>
+      );
+    }
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className={className}>
+        <span className={`h-1.5 w-1.5 rounded-full ${highlighted ? "bg-white" : "bg-emerald-500"}`} />
         <span>精准</span>
       </span>
     );
   }
-  if (text.includes("客服") || text.includes("客户")) {
+  if (text.includes("客服")) {
+    const className = highlighted
+      ? "inline-flex items-center gap-1 rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-rose-500"
+      : "inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200";
+    if (clickable) {
+      return (
+        <button type="button" onClick={onClick} className={`${className} transition active:scale-[0.98]`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${highlighted ? "bg-white" : "bg-blue-500"}`} />
+          <span>客服</span>
+        </button>
+      );
+    }
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200">
+      <span className={className}>
         <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-        <span>客户</span>
+        <span>客服</span>
       </span>
     );
   }
@@ -114,6 +148,7 @@ export function MobileOrdersPanel({
   initialSelectedRegion,
   orders,
 }: Props) {
+  const router = useRouter();
   const isSupervisor = accessMode === "SUPERVISOR";
   const [selectedRegion, setSelectedRegion] = useState(initialSelectedRegion === "AUTO" ? "" : (initialSelectedRegion || ""));
   const [newCustomerType, setNewCustomerType] = useState<"" | "精准" | "客服">("");
@@ -133,6 +168,7 @@ export function MobileOrdersPanel({
   const [convertRegionMap, setConvertRegionMap] = useState<Record<number, string>>({});
   const [convertAddressMap, setConvertAddressMap] = useState<Record<number, string>>({});
   const [convertAtMap, setConvertAtMap] = useState<Record<number, string>>({});
+  const [importantPendingMap, setImportantPendingMap] = useState<Record<number, boolean>>({});
   const [recordOpenOrderId, setRecordOpenOrderId] = useState<number | null>(null);
   const nowLocal = new Date();
   const toLocalInput = (value: Date) => {
@@ -171,7 +207,7 @@ export function MobileOrdersPanel({
           ? filtered
           : filtered.filter((item) => {
               const text = String(item.customerType || "");
-              return newCustomerType === "精准" ? text.includes("精准") : text.includes("客服") || text.includes("客户");
+              return newCustomerType === "精准" ? text.includes("精准") : text.includes("客服");
             });
       const titleKeyword = newTitleKeyword.trim().toLowerCase();
       const typedAndNamed = !titleKeyword
@@ -351,7 +387,36 @@ export function MobileOrdersPanel({
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-1">
                   <p className="text-xl font-bold text-slate-900">{item.title || `单据#${item.id}`}</p>
-                  {customerTypeBadge(item.customerType)}
+                  {customerTypeBadge(item.customerType, {
+                    highlighted: tab === "doing" && Boolean(item.isImportant),
+                    clickable:
+                      tab === "doing" &&
+                      (String(item.customerType || "").includes("客服") ||
+                        String(item.customerType || "").includes("精准")) &&
+                      !importantPendingMap[item.id],
+                    onClick:
+                      tab === "doing" &&
+                      (String(item.customerType || "").includes("客服") ||
+                        String(item.customerType || "").includes("精准"))
+                        ? async () => {
+                            if (importantPendingMap[item.id]) return;
+                            setImportantPendingMap((prev) => ({ ...prev, [item.id]: true }));
+                            try {
+                              await fetch("/api/orders/important", {
+                                method: "POST",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({
+                                  orderId: item.id,
+                                  isImportant: !item.isImportant,
+                                }),
+                              });
+                              router.refresh();
+                            } finally {
+                              setImportantPendingMap((prev) => ({ ...prev, [item.id]: false }));
+                            }
+                          }
+                        : undefined,
+                  })}
                 </div>
                 <p className="text-lg font-bold text-blue-600">{item.distanceKm != null ? `${item.distanceKm.toFixed(2)} km` : "-"}</p>
               </div>

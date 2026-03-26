@@ -50,6 +50,9 @@ export async function ensureDispatchOrderBusinessColumns() {
   if (!names.has("convertedToPreciseAt")) {
     await addColumnIfMissing(`ALTER TABLE "DispatchOrder" ADD COLUMN "convertedToPreciseAt" DATETIME;`);
   }
+  if (!names.has("isImportant")) {
+    await addColumnIfMissing(`ALTER TABLE "DispatchOrder" ADD COLUMN "isImportant" BOOLEAN NOT NULL DEFAULT false;`);
+  }
 }
 
 export async function ensureStoreTable() {

@@ -31,7 +31,7 @@ function normalizeNotHandledReason(value: string) {
 
 function isPreciseCustomerType(customerType: string | null | undefined) {
   const text = String(customerType ?? "").trim();
-  return text === "精准" || (text.includes("精准") && !text.includes("客服") && !text.includes("客户"));
+  return text === "精准" || (text.includes("精准") && !text.includes("客服"));
 }
 
 function parseClaimTypeFromRemark(remark: string | null | undefined): "PRECISE" | "SERVICE" | null {
