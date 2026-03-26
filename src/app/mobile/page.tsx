@@ -111,6 +111,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
     select: {
       id: true,
       title: true,
+      remark: true,
       address: true,
       region: true,
       customerType: true,
@@ -215,6 +216,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
           orders={ordersWithDistance.map((item) => ({
             id: item.id,
             title: item.title,
+            remark: item.remark || "",
             address: item.address,
             longitude: item.longitude ?? null,
             latitude: item.latitude ?? null,
@@ -252,6 +254,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
           orders={ordersWithDistance.map((item) => ({
             id: item.id,
             title: item.title,
+            remark: item.remark || "",
             address: item.address,
             region: item.region,
             customerType: item.customerType || "",

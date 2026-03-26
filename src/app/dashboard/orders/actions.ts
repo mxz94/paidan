@@ -124,6 +124,17 @@ function parseOptionalDateTime(value: FormDataEntryValue | null) {
 
 const APPOINTMENT_MAX_DAYS = 15;
 
+function getShanghaiDayRange(anchor = new Date()) {
+  const offsetMs = 8 * 60 * 60 * 1000;
+  const shifted = new Date(anchor.getTime() + offsetMs);
+  const y = shifted.getUTCFullYear();
+  const m = shifted.getUTCMonth();
+  const d = shifted.getUTCDate();
+  const dayStartUtc = new Date(Date.UTC(y, m, d, 0, 0, 0, 0) - offsetMs);
+  const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { dayStart: dayStartUtc, dayEnd: dayEndUtc };
+}
+
 function validateAppointmentInFutureDays(value: Date | null) {
   if (!value) return true;
   const now = new Date();
@@ -450,6 +461,20 @@ export async function createDispatchOrder(formData: FormData) {
   });
 
   const now = new Date();
+  const { dayStart, dayEnd } = getShanghaiDayRange(now);
+  const sameDayExists = await prisma.dispatchOrder.findFirst({
+    where: {
+      tenantId: Number(me.tenantId),
+      phone: parsed.data.phone,
+      isDeleted: false,
+      createdAt: { gte: dayStart, lte: dayEnd },
+    },
+    select: { id: true },
+  });
+  if (sameDayExists) {
+    redirect("/dashboard/orders?err=phone_once");
+  }
+
   const nextStatus = isSupervisorUser ? "CLAIMED" : "PENDING";
   const nextClaimedById = isSupervisorUser ? Number(session.user.id) : null;
   const nextClaimedAt = isSupervisorUser ? now : null;
@@ -556,6 +581,8 @@ export async function importDispatchOrders(formData: FormData) {
       latitude: number | null;
     }
   > = [];
+  const importNow = new Date();
+  const { dayStart, dayEnd } = getShanghaiDayRange(importNow);
   for (const row of dataRows) {
     const title = String(row[titleIdx] ?? "").trim();
     const phone = String(row[phoneIdx] ?? "").trim();
@@ -603,6 +630,25 @@ export async function importDispatchOrders(formData: FormData) {
       longitude,
       latitude,
     });
+  }
+
+  const importPhones = normalizedRows.map((item) => item.phone);
+  const duplicatePhoneInFile = importPhones.some((phone, index) => importPhones.indexOf(phone) !== index);
+  if (duplicatePhoneInFile) {
+    redirect("/dashboard/orders?err=phone_once");
+  }
+  const existingSameDayPhones = await prisma.dispatchOrder.findMany({
+    where: {
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      phone: { in: importPhones },
+      createdAt: { gte: dayStart, lte: dayEnd },
+    },
+    select: { phone: true },
+    distinct: ["phone"],
+  });
+  if (existingSameDayPhones.length > 0) {
+    redirect("/dashboard/orders?err=phone_once");
   }
 
   await prisma.$transaction(async (tx) => {
@@ -765,6 +811,42 @@ export async function importLeadDispatchOrders(formData: FormData) {
       inviterName: parsed.data.inviter ?? "",
       createdAt: parseInviteDate(parsed.data.inviteDate ?? ""),
     });
+  }
+
+  const leadKeySet = new Set<string>();
+  for (const payload of createPayloads) {
+    const { dayStart } = getShanghaiDayRange(payload.createdAt);
+    const key = `${payload.phone}__${dayStart.toISOString()}`;
+    if (leadKeySet.has(key)) {
+      redirect("/dashboard/orders?err=phone_once");
+    }
+    leadKeySet.add(key);
+  }
+
+  const dayPhoneMap = new Map<string, Set<string>>();
+  for (const payload of createPayloads) {
+    const { dayStart } = getShanghaiDayRange(payload.createdAt);
+    const dayKey = dayStart.toISOString();
+    if (!dayPhoneMap.has(dayKey)) {
+      dayPhoneMap.set(dayKey, new Set<string>());
+    }
+    dayPhoneMap.get(dayKey)!.add(payload.phone);
+  }
+  for (const [dayKey, phones] of dayPhoneMap.entries()) {
+    const dayStart = new Date(dayKey);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+    const existing = await prisma.dispatchOrder.findFirst({
+      where: {
+        tenantId: Number(me.tenantId),
+        isDeleted: false,
+        phone: { in: Array.from(phones) },
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      redirect("/dashboard/orders?err=phone_once");
+    }
   }
 
   await prisma.$transaction(async (tx) => {

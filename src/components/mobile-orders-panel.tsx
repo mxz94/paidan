@@ -31,6 +31,7 @@ type RecordItem = {
 type OrderItem = {
   id: number;
   title: string;
+  remark?: string;
   address: string;
   region: string;
   customerType: string;
@@ -428,6 +429,20 @@ export function MobileOrdersPanel({
               >
                 {item.address || "未填写地址"}
               </a>
+              {tab === "doing" && item.remark ? (
+                <p
+                  className="mt-1 text-sm text-slate-600"
+                  title={item.remark}
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  备注：{item.remark}
+                </p>
+              ) : null}
               <p className="mt-1 text-sm text-slate-500">创建人：{item.createdByName}</p>
               {tab === "new" ? (
                 <div className="mt-1 flex items-center justify-between gap-2">

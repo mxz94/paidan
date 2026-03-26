@@ -45,6 +45,7 @@ const errorText: Record<string, string> = {
   import_file: "请选择要导入的文件。",
   import_invalid: "导入失败：文件格式或数据内容不正确，请检查后重试。",
   import_limit: "导入失败：单次最多导入 500 条。",
+  phone_once: "录入失败：同一手机号在当天只允许录入一次。",
   assign_perm: "无派单权限，请在角色管理中勾选“单据管理-派单按钮”。",
   assign_invalid: "派单失败：参数无效。",
   assign_user: "派单失败：请选择有效的移动端用户。",
