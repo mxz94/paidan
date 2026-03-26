@@ -168,6 +168,8 @@ export async function createUser(formData: FormData) {
   if (!parsed.success) {
     redirect("/dashboard/users?err=invalid");
   }
+  const scopedStoreId = Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? Number(me.storeId) : null;
+  const effectiveStoreId = scopedStoreId ?? parsed.data.storeId;
 
   const role = await prisma.role.findFirst({
     where: { id: parsed.data.roleId, tenantId: Number(me.tenantId) },
@@ -176,7 +178,7 @@ export async function createUser(formData: FormData) {
     redirect("/dashboard/users?err=role");
   }
   const store = await prisma.store.findFirst({
-    where: { id: parsed.data.storeId, tenantId: Number(me.tenantId), isDeleted: false },
+    where: { id: effectiveStoreId, tenantId: Number(me.tenantId), isDeleted: false },
     select: { id: true },
   });
   if (!store) {
@@ -186,7 +188,7 @@ export async function createUser(formData: FormData) {
   if (parsed.data.accessMode === "SUPERVISOR") {
     await ensureStoreSupervisorAvailable({
       tenantId: Number(me.tenantId),
-      storeId: parsed.data.storeId,
+      storeId: effectiveStoreId,
     });
   }
 
@@ -210,7 +212,7 @@ export async function createUser(formData: FormData) {
       isDeleted: false,
       isDisabled: false,
       roleId: parsed.data.roleId,
-      storeId: parsed.data.storeId,
+      storeId: effectiveStoreId,
       tenantId: Number(me.tenantId),
       longitude: parsed.data.longitude,
       latitude: parsed.data.latitude,
@@ -289,7 +291,11 @@ export async function importUsers(formData: FormData) {
   });
   const roleByName = new Map(roles.map((r) => [r.name, r.id]));
   const stores = await prisma.store.findMany({
-    where: { tenantId: Number(me.tenantId), isDeleted: false },
+    where: {
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { id: Number(me.storeId) } : {}),
+    },
     select: { id: true, name: true },
   });
   const storeByName = new Map(stores.map((s) => [s.name, s.id]));
@@ -418,7 +424,12 @@ export async function updateUser(formData: FormData) {
   }
 
   const target = await prisma.user.findFirst({
-    where: { id: parsed.data.userId, tenantId: Number(me.tenantId), isDeleted: false },
+    where: {
+      id: parsed.data.userId,
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { storeId: Number(me.storeId) } : {}),
+    },
     select: { id: true, storeId: true, username: true, displayName: true, role: { select: { code: true } } },
   });
   if (!target) {
@@ -482,24 +493,23 @@ export async function toggleUserClaimEnabled(formData: FormData) {
     redirect("/dashboard/users?err=self");
   }
 
-  const targetRows = (await prisma.$queryRaw`
-    SELECT "id", "isDeleted", "accessMode", "canClaimOrders"
-    FROM "User"
-    WHERE "id" = ${parsed.data.userId}
-      AND "tenantId" = ${Number(me.tenantId)}
-    LIMIT 1
-  `) as Array<{ id: number; isDeleted: boolean; accessMode: string; canClaimOrders: boolean | number | null }>;
-  const target = targetRows[0];
-  if (!target || target.isDeleted) {
+  const target = await prisma.user.findFirst({
+    where: {
+      id: parsed.data.userId,
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { storeId: Number(me.storeId) } : {}),
+    },
+    select: { id: true, accessMode: true, canClaimOrders: true },
+  });
+  if (!target) {
     redirect("/dashboard/users?err=notfound");
   }
   if (target.accessMode !== "SALE") {
     redirect("/dashboard/users?err=invalid");
   }
 
-  const enabled =
-    target.canClaimOrders === true ||
-    target.canClaimOrders === 1;
+  const enabled = Boolean(target.canClaimOrders);
   await prisma.user.update({
     where: { id: target.id },
     data: { canClaimOrders: !enabled },
@@ -521,7 +531,12 @@ export async function toggleUserDisabled(formData: FormData) {
   }
 
   const target = await prisma.user.findFirst({
-    where: { id: parsed.data.userId, tenantId: Number(me.tenantId), isDeleted: false },
+    where: {
+      id: parsed.data.userId,
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { storeId: Number(me.storeId) } : {}),
+    },
     select: { id: true, isDisabled: true, username: true, displayName: true, role: { select: { code: true } } },
   });
   if (!target) {
@@ -552,7 +567,12 @@ export async function softDeleteUser(formData: FormData) {
   }
 
   const target = await prisma.user.findFirst({
-    where: { id: parsed.data.userId, tenantId: Number(me.tenantId), isDeleted: false },
+    where: {
+      id: parsed.data.userId,
+      tenantId: Number(me.tenantId),
+      isDeleted: false,
+      ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { storeId: Number(me.storeId) } : {}),
+    },
     select: {
       id: true,
       username: true,

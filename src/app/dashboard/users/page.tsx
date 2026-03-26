@@ -91,10 +91,11 @@ export default async function UsersPage({
   }
 
   const params = await searchParams;
+  const scopedStoreId = Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? Number(me.storeId) : undefined;
   const [roles, stores] = await Promise.all([
     prisma.role.findMany({ where: { tenantId: Number(me.tenantId) }, orderBy: { id: "asc" } }),
     prisma.store.findMany({
-      where: { tenantId: Number(me.tenantId), isDeleted: false },
+      where: { tenantId: Number(me.tenantId), isDeleted: false, ...(scopedStoreId ? { id: scopedStoreId } : {}) },
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -109,8 +110,12 @@ export default async function UsersPage({
   const where: {
     tenantId: number;
     isDeleted: boolean;
+    storeId?: number;
     AND?: Array<Record<string, unknown>>;
   } = { tenantId: Number(me.tenantId), isDeleted: false };
+  if (scopedStoreId) {
+    where.storeId = scopedStoreId;
+  }
   const andConditions: Array<Record<string, unknown>> = [];
   if (keyword) {
     andConditions.push({
@@ -204,6 +209,7 @@ export default async function UsersPage({
             <UserCreateModal
               roles={roles.map((item) => ({ id: item.id, name: item.name }))}
               stores={stores.map((item) => ({ id: item.id, name: item.name }))}
+              fixedStore={scopedStoreId ? { id: scopedStoreId, name: stores[0]?.name ?? "当前门店" } : undefined}
               action={async (formData) => {
                 "use server";
                 const { createUser } = await import("./actions");

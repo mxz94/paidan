@@ -223,6 +223,25 @@ export default async function OrdersPage({
         { title: { contains: keyword } },
         { address: { contains: keyword } },
         { phone: { contains: keyword } },
+        {
+          createdBy: {
+            OR: [{ displayName: { contains: keyword } }, { username: { contains: keyword } }],
+          },
+        },
+        {
+          claimedBy: {
+            is: {
+              OR: [{ displayName: { contains: keyword } }, { username: { contains: keyword } }],
+            },
+          },
+        },
+        {
+          convertedToPreciseBy: {
+            is: {
+              OR: [{ displayName: { contains: keyword } }, { username: { contains: keyword } }],
+            },
+          },
+        },
       ],
     });
   }
@@ -430,7 +449,7 @@ export default async function OrdersPage({
           <input
             name="keyword"
             defaultValue={keyword}
-            placeholder="关键字：标题/地址/手机号"
+            placeholder="关键字：标题/地址/手机号/创建人/领取人/转精准人"
             className="h-8 w-56 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
           />
           <select

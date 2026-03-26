@@ -81,11 +81,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const params = await searchParams;
   const tenantWhere = me.role.code === "SUPER_ADMIN" ? {} : { tenantId: me.tenantId as number };
+  const scopedStoreId =
+    me.role.code !== "SUPER_ADMIN" && Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0
+      ? Number(me.storeId)
+      : undefined;
   const canFilterStore = me.role.code !== "SUPER_ADMIN" && Boolean(me.tenantId);
 
   const stores = canFilterStore
     ? await prisma.store.findMany({
-        where: { tenantId: Number(me.tenantId), isDeleted: false },
+        where: {
+          tenantId: Number(me.tenantId),
+          isDeleted: false,
+          ...(scopedStoreId ? { id: scopedStoreId } : {}),
+        },
         select: { id: true, name: true },
         orderBy: { createdAt: "desc" },
       })
@@ -93,10 +101,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const selectedStoreIdRaw = String(params.storeId ?? "").trim();
   const selectedStoreId = Number(selectedStoreIdRaw);
+  const defaultStoreId = scopedStoreId && stores.some((s) => s.id === scopedStoreId) ? scopedStoreId : undefined;
   const activeStoreId =
     canFilterStore && Number.isInteger(selectedStoreId) && stores.some((s) => s.id === selectedStoreId)
       ? selectedStoreId
-      : undefined;
+      : defaultStoreId;
 
   const periodRaw = String(params.period ?? "day") as PeriodType;
   const period: PeriodType = periodRaw === "week" || periodRaw === "month" ? periodRaw : "day";
@@ -405,7 +414,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {canFilterStore ? (
-              <DashboardStoreFilter stores={stores} activeStoreId={activeStoreId} period={period} />
+              <DashboardStoreFilter
+                stores={stores}
+                activeStoreId={activeStoreId}
+                period={period}
+                disabled={Boolean(scopedStoreId)}
+              />
             ) : null}
 
             <div className="inline-flex rounded-xl border border-cyan-300/40 bg-cyan-400/10 p-1 text-xs font-semibold">
