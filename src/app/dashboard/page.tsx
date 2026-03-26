@@ -115,7 +115,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const orderStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const pendingTimeoutStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const claimTimeoutStoreWhere = activeStoreId ? { claimedBy: { is: { storeId: activeStoreId } } } : {};
-  const recordStoreWhereByOrder = activeStoreId ? { order: { createdBy: { storeId: activeStoreId } } } : {};
   const before24h = new Date(anchor.getTime() - 24 * 60 * 60 * 1000);
   const before72h = new Date(anchor.getTime() - 72 * 60 * 60 * 1000);
 
@@ -172,7 +171,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         actionType: "CLAIM",
         ...tenantWhere,
-        ...recordStoreWhereByOrder,
         createdAt: { gte: range.start, lte: range.end },
         operator: {
           accessMode: { in: ["SALE", "SUPERVISOR"] },
