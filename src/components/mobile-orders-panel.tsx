@@ -156,7 +156,9 @@ export function MobileOrdersPanel({
   const [newTitleKeyword, setNewTitleKeyword] = useState("");
   const [newSortMode, setNewSortMode] = useState<NewSortMode>("distance");
   const [doingSortMode, setDoingSortMode] = useState<DoingSortMode>("appointment");
+  const [doingKeyword, setDoingKeyword] = useState("");
   const [doneSortMode, setDoneSortMode] = useState<DoneSortMode>("updated");
+  const [doneKeyword, setDoneKeyword] = useState("");
   const [finishOrderId, setFinishOrderId] = useState<number | null>(null);
   const [finishHandledPhoneMap, setFinishHandledPhoneMap] = useState<Record<number, string>>({});
   const [endOrderId, setEndOrderId] = useState<number | null>(null);
@@ -193,13 +195,13 @@ export function MobileOrdersPanel({
       return Number.isNaN(ts) ? null : ts;
     };
 
-    const keyword = selectedRegion.trim().toLowerCase();
-    const filtered = !keyword
+    const regionKeyword = selectedRegion.trim().toLowerCase();
+    const filtered = !regionKeyword
       ? [...orders]
       : orders.filter((item) => {
       const region = (item.region || "").toLowerCase();
       const address = (item.address || "").toLowerCase();
-      return region.includes(keyword) || address.includes(keyword);
+      return region.includes(regionKeyword) || address.includes(regionKeyword);
     });
 
     if (tab === "new") {
@@ -240,7 +242,16 @@ export function MobileOrdersPanel({
     }
 
     if (tab === "doing") {
-      return filtered.sort((a, b) => {
+      const keyword = doingKeyword.trim().toLowerCase();
+      const doingFiltered = !keyword
+        ? filtered
+        : filtered.filter((item) => {
+            const phone = String(item.phone || "").toLowerCase();
+            const remark = String(item.remark || "").toLowerCase();
+            return phone.includes(keyword) || remark.includes(keyword);
+          });
+
+      return doingFiltered.sort((a, b) => {
         if (doingSortMode === "distance") {
           if (a.distanceKm == null && b.distanceKm == null) return 0;
           if (a.distanceKm == null) return 1;
@@ -259,7 +270,16 @@ export function MobileOrdersPanel({
       });
     }
 
-    return filtered.sort((a, b) => {
+    const doneSearchKeyword = doneKeyword.trim().toLowerCase();
+    const doneFiltered = !doneSearchKeyword
+      ? filtered
+      : filtered.filter((item) => {
+          const phone = String(item.phone || "").toLowerCase();
+          const remark = String(item.remark || "").toLowerCase();
+          return phone.includes(doneSearchKeyword) || remark.includes(doneSearchKeyword);
+        });
+
+    return doneFiltered.sort((a, b) => {
       if (doneSortMode === "updated") {
         return (toTs(b.updatedAt) ?? 0) - (toTs(a.updatedAt) ?? 0);
       }
@@ -281,7 +301,7 @@ export function MobileOrdersPanel({
       }
       return (toTs(b.createdAt) ?? 0) - (toTs(a.createdAt) ?? 0);
     });
-  }, [doingSortMode, doneSortMode, newCustomerType, newSortMode, newTitleKeyword, orders, selectedRegion, tab]);
+  }, [doingKeyword, doingSortMode, doneKeyword, doneSortMode, newCustomerType, newSortMode, newTitleKeyword, orders, selectedRegion, tab]);
 
   return (
     <>
@@ -363,6 +383,26 @@ export function MobileOrdersPanel({
               value={newTitleKeyword}
               onChange={(event) => setNewTitleKeyword(event.currentTarget.value)}
               placeholder="套餐名/区域/地址搜索"
+              className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs"
+            />
+          </div>
+        ) : null}
+        {tab === "doing" ? (
+          <div className="mt-2">
+            <input
+              value={doingKeyword}
+              onChange={(event) => setDoingKeyword(event.currentTarget.value)}
+              placeholder="手机号/备注搜索"
+              className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs"
+            />
+          </div>
+        ) : null}
+        {tab === "done" ? (
+          <div className="mt-2">
+            <input
+              value={doneKeyword}
+              onChange={(event) => setDoneKeyword(event.currentTarget.value)}
+              placeholder="手机号/备注搜索"
               className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs"
             />
           </div>

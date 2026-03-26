@@ -54,3 +54,5 @@ prisma/dev.db-journal
 .dev.log
 
 /.cache
+/src-tauri/target
+/src-tauri/gen
