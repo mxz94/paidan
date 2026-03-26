@@ -115,6 +115,9 @@ export async function ensureUserManageColumns() {
   if (!names.has("serviceClaimLimit")) {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "serviceClaimLimit" INTEGER;`);
   }
+  if (!names.has("sessionToken")) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN "sessionToken" TEXT;`);
+  }
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 }
