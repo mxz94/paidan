@@ -125,6 +125,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     serviceEntryRaw,
     serviceInvalidRaw,
     saleClaimRaw,
+    inProgressRaw,
     periodStoreOrders,
     pendingTimeoutOrders,
     claimTimeoutOrders,
@@ -177,6 +178,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           accessMode: { in: ["SALE", "SUPERVISOR"] },
           isDeleted: false,
           ...(activeStoreId ? { storeId: activeStoreId } : {}),
+        },
+      },
+      _count: { _all: true },
+    }),
+    prisma.dispatchOrder.groupBy({
+      by: ["claimedById"],
+      where: {
+        isDeleted: false,
+        ...tenantWhere,
+        status: "CLAIMED",
+        claimedById: { not: null },
+        claimedBy: {
+          is: {
+            isDeleted: false,
+            ...(activeStoreId ? { storeId: activeStoreId } : {}),
+          },
         },
       },
       _count: { _all: true },
@@ -250,6 +267,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       ...serviceEntryRaw.map((x) => x.createdById),
       ...serviceInvalidRaw.map((x) => x.createdById),
       ...saleClaimRaw.map((x) => x.operatorId),
+      ...inProgressRaw.map((x) => x.claimedById).filter((x): x is number => typeof x === "number"),
     ]),
   );
   const users = userIds.length
@@ -287,6 +305,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const serviceEntryTotal = serviceEntryRows.reduce((sum, item) => sum + item.count, 0);
   const serviceInvalidTotal = serviceInvalidRows.reduce((sum, item) => sum + item.count, 0);
   const saleClaimTotal = saleClaimRows.reduce((sum, item) => sum + item.count, 0);
+  const inProgressRows = [...inProgressRaw]
+    .filter((x): x is typeof x & { claimedById: number } => typeof x.claimedById === "number")
+    .sort((a, b) => b._count._all - a._count._all)
+    .map((x) => ({
+      id: x.claimedById,
+      name: userMap.get(x.claimedById)?.displayName || userMap.get(x.claimedById)?.username || `用户#${x.claimedById}`,
+      count: x._count._all,
+    }));
+  const inProgressTotal = inProgressRows.reduce((sum, item) => sum + item.count, 0);
 
   const storeIds = Array.from(
     new Set(
@@ -460,7 +487,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid gap-5 lg:grid-cols-4">
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900">客服录入排行</h2>
@@ -524,6 +551,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </div>
           <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
             合计：<span className="text-emerald-700">{saleClaimTotal}</span> 次
+          </div>
+        </article>
+
+        <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">进行中单据排行</h2>
+            <span className="text-xs text-slate-500">实时</span>
+          </div>
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {inProgressRows.length > 0 ? (
+              inProgressRows.map((r, i) => (
+                <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <span className="text-slate-700">{i + 1}. {r.name}</span>
+                  <span className="font-bold text-violet-700">{r.count} 单</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">暂无数据</p>
+            )}
+          </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
+            合计：<span className="text-violet-700">{inProgressTotal}</span> 单
           </div>
         </article>
       </div>
