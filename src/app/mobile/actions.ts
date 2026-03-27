@@ -316,7 +316,7 @@ export async function claimDispatchOrder(formData: FormData) {
           operatorId,
           tenantId,
           actionType: "CLAIM",
-          remark: `领取单据 [CLAIM_TYPE:${isPreciseOrder ? "PRECISE" : "SERVICE"}]`,
+          remark: "领取单据",
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },

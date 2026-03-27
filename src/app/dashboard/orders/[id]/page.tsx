@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserWithTenant, hasTenantDataScope } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope } from "@/lib/tenant";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
 
 type Params = Promise<{ id: string }>;
@@ -35,6 +35,10 @@ const actionLabel: Record<string, string> = {
   CONVERT_PRECISE: "转精准",
 };
 
+function cleanRecordRemark(remark: string | null | undefined) {
+  return String(remark ?? "").replace(/\s*\[CLAIM_TYPE:(?:PRECISE|SERVICE)\]\s*/g, "").trim();
+}
+
 export default async function OrderDetailPage({
   params,
   searchParams,
@@ -62,11 +66,17 @@ export default async function OrderDetailPage({
     notFound();
   }
 
+  const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
+  const canViewStoreAll = hasStoreDataScope(me.role.code, me.role.dataScope) && Number(me.storeId) > 0;
   const where = {
     id: orderId,
     isDeleted: false,
     ...(me.tenantId ? { tenantId: me.tenantId } : {}),
-    ...(hasTenantDataScope(me.role.code, me.role.dataScope) ? {} : { createdById: Number(session.user.id) }),
+    ...(canViewTenantAll
+      ? {}
+      : canViewStoreAll
+        ? { createdBy: { storeId: Number(me.storeId) } }
+        : { createdById: Number(session.user.id) }),
   };
 
   const order = await prisma.dispatchOrder.findFirst({
@@ -272,7 +282,9 @@ export default async function OrderDetailPage({
                     operatorLatitude={record.operatorLatitude ?? null}
                   />
                 </div>
-                {record.remark ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">备注：{record.remark}</p> : null}
+                {cleanRecordRemark(record.remark) ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">备注：{cleanRecordRemark(record.remark)}</p>
+                ) : null}
                 {record.photoUrl ? (
                   <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
                     <Image

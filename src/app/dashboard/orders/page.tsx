@@ -33,6 +33,9 @@ type SearchParams = Promise<{
   convertedById?: string;
   sortBy?: string;
   sortDir?: string;
+  timeRange?: string;
+  timeStart?: string;
+  timeEnd?: string;
 }>;
 
 const customerTypes = ["精准", "客服"];
@@ -59,6 +62,28 @@ const statusLabel: Record<string, string> = {
   DONE: "已办理",
   ENDED: "不办理",
 };
+
+function parseDateTime(value: string) {
+  if (!value) return null;
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseTimeRangeInput(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { start: null as Date | null, end: null as Date | null };
+  const parts = raw.split(/\s*(?:~|～|至|到)\s*/).map((item) => item.trim()).filter(Boolean);
+  const start = parseDateTime(parts[0] ?? "");
+  const end = parseDateTime(parts[1] ?? "");
+  return { start, end };
+}
+
+function formatDateTimeLocal(value: Date | null) {
+  if (!value) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
 
 function customerTypeBadge(customerType: string, isImportant = false) {
   const text = (customerType || "").trim();
@@ -201,6 +226,14 @@ export default async function OrdersPage({
   const convertedByFilter = Number(convertedByIdRaw);
   const rawSortBy = String(params.sortBy ?? "").trim();
   const rawSortDir = String(params.sortDir ?? "").trim().toLowerCase();
+  const timeRangeRaw = String(params.timeRange ?? "").trim();
+  const timeStartRaw = String(params.timeStart ?? "").trim();
+  const timeEndRaw = String(params.timeEnd ?? "").trim();
+  const parsedTimeRange = parseTimeRangeInput(timeRangeRaw);
+  const timeStart = parseDateTime(timeStartRaw) ?? parsedTimeRange.start;
+  const timeEnd = parseDateTime(timeEndRaw) ?? parsedTimeRange.end;
+  const timeStartValue = formatDateTimeLocal(timeStart);
+  const timeEndValue = formatDateTimeLocal(timeEnd);
   const sortBy: SortBy = isSortBy(rawSortBy) ? rawSortBy : "createdAt";
   const sortDir: SortDir = rawSortDir === "asc" ? "asc" : "desc";
   const townOptions = district ? getLuoyangTowns(district) : [];
@@ -266,6 +299,19 @@ export default async function OrdersPage({
   }
   if (Number.isInteger(convertedByFilter) && convertedByFilter > 0) {
     andConditions.push({ convertedToPreciseById: convertedByFilter });
+  }
+  if (timeStart || timeEnd) {
+    const timeRange = {
+      ...(timeStart ? { gte: timeStart } : {}),
+      ...(timeEnd ? { lte: timeEnd } : {}),
+    };
+    andConditions.push({
+      OR: [
+        { createdAt: timeRange },
+        { claimedAt: timeRange },
+        { convertedToPreciseAt: timeRange },
+      ],
+    });
   }
   if (andConditions.length > 0) {
     where.AND = andConditions;
@@ -387,6 +433,8 @@ export default async function OrdersPage({
     createdById: createdByIdRaw,
     claimedById: claimedByIdRaw,
     convertedById: convertedByIdRaw,
+    timeStart: timeStartValue,
+    timeEnd: timeEndValue,
     sortBy,
     sortDir,
   };
@@ -399,6 +447,8 @@ export default async function OrdersPage({
     createdById: createdByIdRaw,
     claimedById: claimedByIdRaw,
     convertedById: convertedByIdRaw,
+    timeStart: timeStartValue,
+    timeEnd: timeEndValue,
   };
   const getSortHref = (field: SortBy) =>
     `/dashboard/orders?${buildQuery({
@@ -453,6 +503,23 @@ export default async function OrdersPage({
             placeholder="关键字：标题/地址/手机号/创建人/领取人/转精准人"
             className="h-8 w-56 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
           />
+          <div className="flex h-8 w-[360px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-1">
+            <input
+              name="timeStart"
+              type="datetime-local"
+              defaultValue={timeStartValue}
+              className="h-6 w-[160px] rounded px-1 text-[11px] outline-none"
+              aria-label="开始时间"
+            />
+            <span className="px-1 text-[11px] text-slate-400">~</span>
+            <input
+              name="timeEnd"
+              type="datetime-local"
+              defaultValue={timeEndValue}
+              className="h-6 w-[160px] rounded px-1 text-[11px] outline-none"
+              aria-label="结束时间"
+            />
+          </div>
           <select
             name="status"
             defaultValue={status}
@@ -585,6 +652,8 @@ export default async function OrdersPage({
             <input type="hidden" name="createdById" value={createdByIdRaw} />
             <input type="hidden" name="claimedById" value={claimedByIdRaw} />
             <input type="hidden" name="convertedById" value={convertedByIdRaw} />
+            <input type="hidden" name="timeStart" value={timeStartValue} />
+            <input type="hidden" name="timeEnd" value={timeEndValue} />
             <input type="hidden" name="pageSize" value={pageSize} />
             <input type="hidden" name="sortBy" value={sortBy} />
             <input type="hidden" name="sortDir" value={sortDir} />
@@ -818,6 +887,8 @@ export default async function OrdersPage({
               <input type="hidden" name="createdById" value={createdByIdRaw} />
               <input type="hidden" name="claimedById" value={claimedByIdRaw} />
               <input type="hidden" name="convertedById" value={convertedByIdRaw} />
+              <input type="hidden" name="timeStart" value={timeStartValue} />
+              <input type="hidden" name="timeEnd" value={timeEndValue} />
               <input type="hidden" name="sortBy" value={sortBy} />
               <input type="hidden" name="sortDir" value={sortDir} />
               <input type="hidden" name="page" value="1" />

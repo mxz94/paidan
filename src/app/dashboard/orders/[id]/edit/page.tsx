@@ -4,7 +4,7 @@ import { OrderEditForm } from "@/components/order-edit-form";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGION_TREE } from "@/lib/regions";
-import { getSessionUserWithTenant, hasTenantDataScope } from "@/lib/tenant";
+import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope } from "@/lib/tenant";
 import { updateDispatchOrder } from "../../actions";
 
 type Params = Promise<{ id: string }>;
@@ -27,9 +27,16 @@ export default async function EditOrderPage({ params }: { params: Params }) {
   }
 
   const canAll = hasTenantDataScope(me.role.code, me.role.dataScope);
-  const where =
-    canAll
-      ? { id: orderId, isDeleted: false, ...(me.tenantId ? { tenantId: me.tenantId } : {}) }
+  const canStoreAll = hasStoreDataScope(me.role.code, me.role.dataScope) && Number(me.storeId) > 0;
+  const where = canAll
+    ? { id: orderId, isDeleted: false, ...(me.tenantId ? { tenantId: me.tenantId } : {}) }
+    : canStoreAll
+      ? {
+          id: orderId,
+          tenantId: Number(me.tenantId),
+          isDeleted: false,
+          createdBy: { storeId: Number(me.storeId) },
+        }
       : { id: orderId, tenantId: Number(me.tenantId), createdById: Number(session.user.id), isDeleted: false };
 
   const [order, packages] = await Promise.all([

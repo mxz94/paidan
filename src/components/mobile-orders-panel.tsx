@@ -75,6 +75,10 @@ function actionText(actionType: string) {
   return actionType;
 }
 
+function cleanRecordRemark(remark: string | null | undefined) {
+  return String(remark ?? "").replace(/\s*\[CLAIM_TYPE:(?:PRECISE|SERVICE)\]\s*/g, "").trim();
+}
+
 function buildAmapNavUrl(item: OrderItem) {
   const name = item.title || `单据#${item.id}`;
   if (item.longitude != null && item.latitude != null) {
@@ -861,7 +865,9 @@ export function MobileOrdersPanel({
                                 operatorLatitude={record.operatorLatitude}
                               />
                             </div>
-                            {record.remark ? <p className="mt-1 whitespace-pre-wrap text-slate-700">备注：{record.remark}</p> : null}
+                            {cleanRecordRemark(record.remark) ? (
+                              <p className="mt-1 whitespace-pre-wrap text-slate-700">备注：{cleanRecordRemark(record.remark)}</p>
+                            ) : null}
                             {record.photoUrl ? (
                               <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
                                 <Image src={record.photoUrl} alt="记录照片" width={56} height={56} className="rounded object-cover" />
