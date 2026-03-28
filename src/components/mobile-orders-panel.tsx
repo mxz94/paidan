@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   claimDispatchOrder,
@@ -63,6 +63,8 @@ type Props = {
 type DoingSortMode = "appointment" | "distance" | "claim";
 type NewSortMode = "distance" | "appointment" | "created";
 type DoneSortMode = "updated" | "created" | "appointment" | "claim" | "distance";
+const INITIAL_VISIBLE_COUNT = 200;
+const LOAD_MORE_STEP = 100;
 
 function actionText(actionType: string) {
   if (actionType === "CLAIM") return "领取";
@@ -177,6 +179,8 @@ export function MobileOrdersPanel({
   const [convertAtMap, setConvertAtMap] = useState<Record<number, string>>({});
   const [importantPendingMap, setImportantPendingMap] = useState<Record<number, boolean>>({});
   const [recordOpenOrderId, setRecordOpenOrderId] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const nowLocal = new Date();
   const toLocalInput = (value: Date) => {
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -306,6 +310,30 @@ export function MobileOrdersPanel({
       return (toTs(b.createdAt) ?? 0) - (toTs(a.createdAt) ?? 0);
     });
   }, [doingKeyword, doingSortMode, doneKeyword, doneSortMode, newCustomerType, newSortMode, newTitleKeyword, orders, selectedRegion, tab]);
+  const pagedOrders = useMemo(
+    () => visibleOrders.slice(0, Math.min(visibleOrders.length, visibleCount)),
+    [visibleCount, visibleOrders],
+  );
+  const hasMoreOrders = pagedOrders.length < visibleOrders.length;
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [tab, selectedRegion, newCustomerType, newTitleKeyword, newSortMode, doingSortMode, doingKeyword, doneSortMode, doneKeyword]);
+
+  useEffect(() => {
+    if (!hasMoreOrders || !loadMoreRef.current) return;
+    const target = loadMoreRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + LOAD_MORE_STEP, visibleOrders.length));
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMoreOrders, visibleOrders.length]);
 
   return (
     <>
@@ -414,7 +442,7 @@ export function MobileOrdersPanel({
       </div>
 
       <div className="space-y-3">
-        {visibleOrders.map((item) => {
+        {pagedOrders.map((item) => {
           const showFinishForm = tab === "doing" && finishOrderId === item.id;
           const showEndForm = tab === "doing" && endOrderId === item.id;
           const showRescheduleForm = tab === "doing" && rescheduleOrderId === item.id;
@@ -890,6 +918,23 @@ export function MobileOrdersPanel({
           <div className="rounded-2xl bg-white p-4 text-center text-sm text-slate-500 shadow-sm ring-1 ring-slate-100">
             当前筛选下暂无单据
           </div>
+        ) : null}
+        {visibleOrders.length > 0 ? (
+          <div className="pt-1 text-center text-xs text-slate-400">
+            已显示 {pagedOrders.length} / {visibleOrders.length}
+          </div>
+        ) : null}
+        {hasMoreOrders ? (
+          <>
+            <div ref={loadMoreRef} className="h-1 w-full" />
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => Math.min(prev + LOAD_MORE_STEP, visibleOrders.length))}
+              className="w-full rounded-xl border border-slate-300 bg-white py-2 text-xs font-semibold text-slate-600"
+            >
+              加载更多
+            </button>
+          </>
         ) : null}
       </div>
     </>

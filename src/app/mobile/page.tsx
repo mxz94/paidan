@@ -1,5 +1,6 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
@@ -92,7 +93,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   const tab = ["new", "doing", "done"].includes(String(params.tab)) ? String(params.tab) : "new";
   const selectedRegionRaw = String(params.region ?? "").trim() || "AUTO";
 
-  const baseWhere: any = { isDeleted: false, tenantId: me.tenantId };
+  const baseWhere: Prisma.DispatchOrderWhereInput = { isDeleted: false, tenantId: me.tenantId };
 
   if (tab === "new") {
     baseWhere.status = "PENDING";
@@ -105,6 +106,13 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   }
 
   const regions = [...LUOYANG_REGIONS];
+  const queryOrderBy =
+    tab === "doing"
+      ? ({ claimedAt: "desc" } as const)
+      : tab === "done"
+        ? ({ updatedAt: "desc" } as const)
+        : ({ createdAt: "desc" } as const);
+  const queryTake = tab === "new" ? 150 : 500;
 
   const orders = await prisma.dispatchOrder.findMany({
     where: baseWhere,
@@ -160,8 +168,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
         },
       },
     },
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: queryOrderBy,
+    take: queryTake,
   });
 
   const ordersWithDistance = orders
@@ -294,5 +302,4 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
     </main>
   );
 }
-
 
