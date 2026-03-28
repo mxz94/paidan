@@ -19,10 +19,13 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/push-notifications": "^8.0.3",
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/space-grotesk": "^5.2.10",
     "@prisma/client": "^6.16.0",
     "bcryptjs": "^3.0.3",
+    "google-auth-library": "^10.6.2",
     "next": "16.2.0",
     "next-auth": "^4.24.13",
     "prisma": "^6.16.0",
@@ -33,9 +36,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.0",
     "@capacitor/cli": "^8.2.0",
-    "@tauri-apps/cli": "^2.1.0",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

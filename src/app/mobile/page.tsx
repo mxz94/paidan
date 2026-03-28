@@ -10,6 +10,7 @@ import { touchUserDailyActive } from "@/lib/user-activity";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
 import { MobileOrdersPanel } from "@/components/mobile-orders-panel";
 import { MobileAutoLocationRefresh } from "@/components/mobile-auto-location-refresh";
+import { MobilePushRegister } from "@/components/mobile-push-register";
 import { OnlineHeartbeat } from "@/components/online-heartbeat";
 
 export const dynamic = "force-dynamic";
@@ -212,6 +213,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
     <main className="min-h-screen bg-slate-100 p-3 text-slate-900">
       <section className="mx-auto max-w-md space-y-3">
         <MobileAutoLocationRefresh enabled />
+        <MobilePushRegister />
         <OnlineHeartbeat />
         <MobileTopPanel
           displayName={me.displayName}

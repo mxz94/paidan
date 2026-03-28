@@ -121,3 +121,22 @@ export async function ensureUserManageColumns() {
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 }
+
+export async function ensurePushDeviceTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "PushDevice" (
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+      "tenantId" INTEGER NOT NULL,
+      "userId" INTEGER NOT NULL,
+      "token" TEXT NOT NULL UNIQUE,
+      "platform" TEXT,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "lastSeenAt" DATETIME
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PushDevice_tenantId_idx" ON "PushDevice"("tenantId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PushDevice_userId_idx" ON "PushDevice"("userId");`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PushDevice_active_idx" ON "PushDevice"("isActive");`);
+}

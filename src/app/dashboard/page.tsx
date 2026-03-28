@@ -4,6 +4,7 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { DashboardStoreFilter } from "@/components/dashboard-store-filter";
+import { DashboardPushTestButton } from "@/components/dashboard-push-test-button";
 import { canAccessMobile, resolveDashboardLandingPathByMenus } from "@/lib/user-access";
 
 type PeriodType = "day" | "week" | "month";
@@ -467,6 +468,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <Link href="/dashboard" className="rounded-xl border border-slate-300/40 bg-slate-400/10 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-400/20">
               重置
             </Link>
+            <DashboardPushTestButton />
           </div>
         </div>
 

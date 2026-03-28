@@ -52,6 +52,7 @@ prisma/dev.db
 prisma/dev.db-journal
 .dev.err.log
 .dev.log
+firebase-service-account.json
 
 /.cache
 /src-tauri/target

@@ -10,6 +10,7 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
+import { notifyNearbyMobileUsersForOrder, sendPushToUsers } from "@/lib/push-notify";
 import { hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
 
 const createDispatchSchema = z.object({
@@ -479,7 +480,7 @@ export async function createDispatchOrder(formData: FormData) {
   const nextClaimedById = isSupervisorUser ? Number(session.user.id) : null;
   const nextClaimedAt = isSupervisorUser ? now : null;
 
-  await prisma.dispatchOrder.create({
+  const createdOrder = await prisma.dispatchOrder.create({
     data: {
       title: enteredTitle,
       packageId: matchedPackage?.id ?? null,
@@ -498,7 +499,26 @@ export async function createDispatchOrder(formData: FormData) {
       claimedById: nextClaimedById,
       claimedAt: nextClaimedAt,
     },
+    select: {
+      id: true,
+      title: true,
+      address: true,
+      longitude: true,
+      latitude: true,
+    },
   });
+
+  if (!isSupervisorUser) {
+    await notifyNearbyMobileUsersForOrder({
+      tenantId: Number(me.tenantId),
+      orderId: createdOrder.id,
+      title: createdOrder.title,
+      address: createdOrder.address,
+      longitude: createdOrder.longitude,
+      latitude: createdOrder.latitude,
+      radiusKm: 5,
+    });
+  }
 
   revalidatePath("/dashboard/orders");
   redirect("/dashboard/orders?created=1");
@@ -1141,6 +1161,17 @@ export async function assignDispatchOrder(formData: FormData) {
 
   revalidatePath("/dashboard/orders");
   if (result > 0) {
+    await sendPushToUsers({
+      tenantId: Number(me.tenantId),
+      userIds: [targetUser.id],
+      title: "你有新的派单",
+      body: `单据 #${orderId} 已指派给你`,
+      data: {
+        kind: "assigned",
+        orderId: String(orderId),
+        tab: "doing",
+      },
+    });
     redirect("/dashboard/orders?assigned=1");
   }
   redirect("/dashboard/orders?err=assign_state");
@@ -1369,6 +1400,16 @@ export async function batchOperateDispatchOrders(formData: FormData) {
     if (result <= 0) {
       redirect(`${redirectBase}${qs.toString() ? "&" : "?"}err=assign_state`);
     }
+    await sendPushToUsers({
+      tenantId: Number(me.tenantId),
+      userIds: [targetUser.id],
+      title: "你有新的派单",
+      body: `已批量派单 ${result} 条`,
+      data: {
+        kind: "assigned_batch",
+        tab: "doing",
+      },
+    });
     redirect(`${redirectBase}${qs.toString() ? "&" : "?"}assigned=1&assignedBatch=${result}`);
   }
 
