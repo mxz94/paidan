@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   claimDispatchOrder,
+  type MobileActionResult,
   convertDispatchOrderToPrecise,
   endDispatchOrder,
   finishDispatchOrder,
@@ -180,6 +181,7 @@ export function MobileOrdersPanel({
   const [importantPendingMap, setImportantPendingMap] = useState<Record<number, boolean>>({});
   const [recordOpenOrderId, setRecordOpenOrderId] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const [actionHint, setActionHint] = useState<{ ok: boolean; text: string } | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const nowLocal = new Date();
   const toLocalInput = (value: Date) => {
@@ -335,8 +337,36 @@ export function MobileOrdersPanel({
     return () => observer.disconnect();
   }, [hasMoreOrders, visibleOrders.length]);
 
+  useEffect(() => {
+    if (!actionHint) return;
+    const timer = setTimeout(() => setActionHint(null), 2200);
+    return () => clearTimeout(timer);
+  }, [actionHint]);
+
+  const runInPlaceAction = async (
+    formData: FormData,
+    submit: (fd: FormData) => Promise<MobileActionResult | void>,
+    onSuccess?: () => void,
+  ) => {
+    formData.set("_inPlace", "1");
+    const result = await submit(formData);
+    if (result && typeof result === "object") {
+      setActionHint({
+        ok: result.ok,
+        text: result.message || (result.ok ? "操作成功" : "操作失败"),
+      });
+      if (result.ok) onSuccess?.();
+    }
+    router.refresh();
+  };
+
   return (
     <>
+      {actionHint ? (
+        <div className={`rounded-xl px-3 py-2 text-xs ${actionHint.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+          {actionHint.text}
+        </div>
+      ) : null}
       <div className="rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-100">
         <div className="flex items-center gap-2">
           <select
@@ -639,7 +669,11 @@ export function MobileOrdersPanel({
 
                   {showFinishForm ? (
                     <form
-                      action={finishDispatchOrder}
+                      action={async (formData) => {
+                        await runInPlaceAction(formData, finishDispatchOrder, () => {
+                          setFinishOrderId(null);
+                        });
+                      }}
                       className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
                     >
                       <input type="hidden" name="orderId" value={item.id} />
@@ -674,7 +708,11 @@ export function MobileOrdersPanel({
 
                   {showEndForm ? (
                     <form
-                      action={endDispatchOrder}
+                      action={async (formData) => {
+                        await runInPlaceAction(formData, endDispatchOrder, () => {
+                          setEndOrderId(null);
+                        });
+                      }}
                       className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
                     >
                       <input type="hidden" name="orderId" value={item.id} />
@@ -715,7 +753,11 @@ export function MobileOrdersPanel({
 
                   {showRescheduleForm ? (
                     <form
-                      action={rescheduleDispatchOrder}
+                      action={async (formData) => {
+                        await runInPlaceAction(formData, rescheduleDispatchOrder, () => {
+                          setRescheduleOrderId(null);
+                        });
+                      }}
                       className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
                     >
                       <input type="hidden" name="orderId" value={item.id} />
@@ -779,7 +821,14 @@ export function MobileOrdersPanel({
                   ) : null}
 
                   {showConvertForm ? (
-                    <form action={convertDispatchOrderToPrecise} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <form
+                      action={async (formData) => {
+                        await runInPlaceAction(formData, convertDispatchOrderToPrecise, () => {
+                          setConvertOrderId(null);
+                        });
+                      }}
+                      className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
+                    >
                       <input type="hidden" name="orderId" value={item.id} />
                       <input type="hidden" name="region" value={selectedRegion} />
                       <input

@@ -375,33 +375,62 @@ export async function appendDispatchOrderRecord(formData: FormData) {
   redirect(buildMobileQuery(formData, "doing", { op: "append1" }));
 }
 
-export async function finishDispatchOrder(formData: FormData) {
+export type MobileActionResult = {
+  ok: boolean;
+  op: string;
+  message?: string;
+};
+
+function isInPlaceAction(formData: FormData) {
+  return String(formData.get("_inPlace") ?? "").trim() === "1";
+}
+
+function respondMobileAction(
+  formData: FormData,
+  nextTab: "new" | "doing" | "done",
+  result: MobileActionResult,
+): MobileActionResult | never {
+  if (isInPlaceAction(formData)) {
+    return result;
+  }
+  redirect(buildMobileQuery(formData, nextTab, { op: result.op }));
+}
+
+export async function finishDispatchOrder(formData: FormData): Promise<MobileActionResult | void> {
   await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "finish0", message: "单据不存在或已变更" });
+  }
   const handledPhoneRaw = String(formData.get("handledPhone") ?? "").trim();
   const handledPhone = normalizeMobilePhone(handledPhoneRaw);
   const handledPhoneToSave = handledPhone || handledPhoneRaw || null;
   const handledRemark = String(formData.get("remark") ?? "").trim();
   const handledPhoto = formData.get("photo");
   const handledPhotoUrl = handledPhoto instanceof File ? await saveCompressedImage(handledPhoto, "orders") : undefined;
-  if (handledPhotoUrl === "__TOO_LARGE__") redirect(buildMobileQuery(formData, "doing", { op: "file" }));
+  if (handledPhotoUrl === "__TOO_LARGE__") {
+    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "图片不能超过10MB" });
+  }
   const convertToPrecise = String(formData.get("convertToPrecise") ?? "") === "1";
 
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
-  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+  if (!tenantId) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "finish0", message: "用户租户信息无效" });
+  }
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
     select: { id: true, customerType: true },
   });
-  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+  if (!order) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "finish0", message: "仅可操作本人进行中的单据" });
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -436,41 +465,51 @@ export async function finishDispatchOrder(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "finish1" }));
-  redirect(buildMobileQuery(formData, "doing", { op: "finish0" }));
+  if (result > 0) {
+    return respondMobileAction(formData, "doing", { ok: true, op: "finish1", message: "已办理成功" });
+  }
+  return respondMobileAction(formData, "doing", { ok: false, op: "finish0", message: "操作失败，请稍后重试" });
 }
 
-export async function endDispatchOrder(formData: FormData) {
+export async function endDispatchOrder(formData: FormData): Promise<MobileActionResult | void> {
   await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "end0", message: "单据不存在或已变更" });
+  }
   const endReasonRaw = String(formData.get("notHandledReason") ?? "").trim();
   const endReason = normalizeNotHandledReason(endReasonRaw);
   if (!END_REASON_OPTIONS.includes(endReason as (typeof END_REASON_OPTIONS)[number])) {
-    redirect(buildMobileQuery(formData, "doing", { op: "end-reason" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "end-reason", message: "请选择不办理原因" });
   }
   const endRemark = String(formData.get("remark") ?? "").trim();
   if (!endRemark) {
-    redirect(buildMobileQuery(formData, "doing", { op: "end-remark" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "end-remark", message: "不办理备注必填" });
   }
   const endPhoto = formData.get("photo");
   const endPhotoUrl = endPhoto instanceof File ? await saveCompressedImage(endPhoto, "orders") : undefined;
-  if (endPhotoUrl === "__TOO_LARGE__") redirect(buildMobileQuery(formData, "doing", { op: "file" }));
+  if (endPhotoUrl === "__TOO_LARGE__") {
+    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "图片不能超过10MB" });
+  }
 
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
-  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+  if (!tenantId) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "end0", message: "用户租户信息无效" });
+  }
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
     select: { id: true },
   });
-  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+  if (!order) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "end0", message: "仅可操作本人进行中的单据" });
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.dispatchOrder.updateMany({
@@ -496,44 +535,52 @@ export async function endDispatchOrder(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "end1" }));
-  redirect(buildMobileQuery(formData, "doing", { op: "end0" }));
+  if (result > 0) {
+    return respondMobileAction(formData, "doing", { ok: true, op: "end1", message: "不办理已提交" });
+  }
+  return respondMobileAction(formData, "doing", { ok: false, op: "end0", message: "操作失败，请稍后重试" });
 }
 
-export async function rescheduleDispatchOrder(formData: FormData) {
+export async function rescheduleDispatchOrder(formData: FormData): Promise<MobileActionResult | void> {
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule0", message: "单据不存在或已变更" });
+  }
 
   const scheduleAtText = String(formData.get("scheduleAt") ?? "").trim();
   const scheduleAt = scheduleAtText ? new Date(scheduleAtText) : null;
   if (!scheduleAt || Number.isNaN(scheduleAt.getTime())) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule-empty" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule-empty", message: "请先选择改约时间" });
   }
   const now = new Date();
   const maxAt = new Date(now.getTime() + RESCHEDULE_MAX_DAYS * 24 * 60 * 60 * 1000);
   if (scheduleAt.getTime() < now.getTime()) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule-range" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule-range", message: "改约时间不能早于当前时间" });
   }
   if (scheduleAt.getTime() > maxAt.getTime()) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule-range" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule-range", message: "改约时间仅支持7天内" });
   }
 
   const remark = String(formData.get("remark") ?? "").trim();
   const nextAddress = String(formData.get("address") ?? "").trim();
   const operatorId = Number(session.user.id);
   const tenantId = await getOperatorTenantId(operatorId);
-  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
+  if (!tenantId) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule0", message: "用户租户信息无效" });
+  }
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
     select: { id: true, address: true, longitude: true, latitude: true },
   });
-  if (!order) redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
+  if (!order) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "reschedule0", message: "仅可操作本人进行中的单据" });
+  }
 
   const finalAddress = nextAddress || order.address || "";
   let finalLongitude = order.longitude ?? null;
@@ -576,19 +623,21 @@ export async function rescheduleDispatchOrder(formData: FormData) {
 
   revalidatePath("/mobile");
   if (updatedCount > 0) {
-    redirect(buildMobileQuery(formData, "doing", { op: "reschedule1" }));
+    return respondMobileAction(formData, "doing", { ok: true, op: "reschedule1", message: "改约成功" });
   }
-  redirect(buildMobileQuery(formData, "doing", { op: "reschedule0" }));
+  return respondMobileAction(formData, "doing", { ok: false, op: "reschedule0", message: "改约失败，请稍后重试" });
 }
 
-export async function convertDispatchOrderToPrecise(formData: FormData) {
+export async function convertDispatchOrderToPrecise(formData: FormData): Promise<MobileActionResult | void> {
   await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
   const orderId = Number(formData.get("orderId"));
-  if (!Number.isInteger(orderId) || orderId <= 0) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "convert0", message: "单据不存在或已变更" });
+  }
 
   const operatorId = Number(session.user.id);
   const operator = await prisma.user.findUnique({
@@ -596,10 +645,12 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
     select: { tenantId: true, accessMode: true, isDeleted: true, isDisabled: true },
   });
   if (!operator || operator.isDeleted || operator.isDisabled || operator.accessMode !== "SUPERVISOR") {
-    redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "convert0", message: "仅主管可转精准" });
   }
   const tenantId = await getOperatorTenantId(operatorId);
-  if (!tenantId) redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+  if (!tenantId) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "convert0", message: "用户租户信息无效" });
+  }
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const remark = String(formData.get("remark") ?? "").trim();
@@ -608,10 +659,10 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   const appointmentAtText = String(formData.get("appointmentAt") ?? "").trim();
   const appointmentAt = appointmentAtText ? new Date(appointmentAtText) : null;
   if (appointmentAt && Number.isNaN(appointmentAt.getTime())) {
-    redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "convert-date", message: "约定时间格式不正确" });
   }
   if (appointmentAt && !isConvertAppointmentWithinFutureDays(appointmentAt)) {
-    redirect(buildMobileQuery(formData, "doing", { op: "convert-date" }));
+    return respondMobileAction(formData, "doing", { ok: false, op: "convert-date", message: "约定时间需在未来15天内" });
   }
 
   const geocodeThrottle = createGeocodeThrottle(GEOCODE_MIN_INTERVAL_MS);
@@ -675,8 +726,10 @@ export async function convertDispatchOrderToPrecise(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  if (result > 0) redirect(buildMobileQuery(formData, "doing", { op: "convert1" }));
-  redirect(buildMobileQuery(formData, "doing", { op: "convert0" }));
+  if (result > 0) {
+    return respondMobileAction(formData, "doing", { ok: true, op: "convert1", message: "转精准成功，已回到未领取" });
+  }
+  return respondMobileAction(formData, "doing", { ok: false, op: "convert0", message: "操作失败，请稍后重试" });
 }
 
 export async function updateMobileProfilePassword(formData: FormData) {

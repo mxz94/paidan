@@ -70,6 +70,23 @@ function parseDateTime(value: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function parseDateBoundary(value: string, boundary: "start" | "end") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = parseDateTime(raw);
+  if (!parsed) return null;
+  if (raw.includes("T") || raw.includes(" ")) {
+    return parsed;
+  }
+  const withBoundary = new Date(parsed);
+  if (boundary === "start") {
+    withBoundary.setHours(0, 0, 0, 0);
+  } else {
+    withBoundary.setHours(23, 59, 59, 999);
+  }
+  return withBoundary;
+}
+
 function parseTimeRangeInput(value: string) {
   const raw = String(value ?? "").trim();
   if (!raw) return { start: null as Date | null, end: null as Date | null };
@@ -83,6 +100,12 @@ function formatDateTimeLocal(value: Date | null) {
   if (!value) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function formatDateInput(value: Date | null) {
+  if (!value) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
 
 function customerTypeBadge(customerType: string, isImportant = false) {
@@ -230,10 +253,10 @@ export default async function OrdersPage({
   const timeStartRaw = String(params.timeStart ?? "").trim();
   const timeEndRaw = String(params.timeEnd ?? "").trim();
   const parsedTimeRange = parseTimeRangeInput(timeRangeRaw);
-  const timeStart = parseDateTime(timeStartRaw) ?? parsedTimeRange.start;
-  const timeEnd = parseDateTime(timeEndRaw) ?? parsedTimeRange.end;
-  const timeStartValue = formatDateTimeLocal(timeStart);
-  const timeEndValue = formatDateTimeLocal(timeEnd);
+  const timeStart = parseDateBoundary(timeStartRaw, "start") ?? parsedTimeRange.start;
+  const timeEnd = parseDateBoundary(timeEndRaw, "end") ?? parsedTimeRange.end;
+  const timeStartValue = formatDateInput(timeStart);
+  const timeEndValue = formatDateInput(timeEnd);
   const sortBy: SortBy = isSortBy(rawSortBy) ? rawSortBy : "createdAt";
   const sortDir: SortDir = rawSortDir === "asc" ? "asc" : "desc";
   const townOptions = district ? getLuoyangTowns(district) : [];
@@ -493,7 +516,7 @@ export default async function OrdersPage({
       </header>
 
       <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <form className="mb-2 flex items-center gap-2 overflow-x-auto rounded-lg border border-slate-200 p-2 whitespace-nowrap">
+        <form className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
           <input type="hidden" name="pageSize" value={pageSize} />
           <input type="hidden" name="sortBy" value={sortBy} />
           <input type="hidden" name="sortDir" value={sortDir} />
@@ -503,20 +526,20 @@ export default async function OrdersPage({
             placeholder="关键字：标题/地址/手机号/创建人/领取人/转精准人"
             className="h-8 w-56 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
           />
-          <div className="flex h-8 w-[360px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-1">
+          <div className="flex h-8 w-[300px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-1">
             <input
               name="timeStart"
-              type="datetime-local"
+              type="date"
               defaultValue={timeStartValue}
-              className="h-6 w-[160px] rounded px-1 text-[11px] outline-none"
+              className="h-6 w-[130px] rounded px-1 text-[11px] outline-none"
               aria-label="开始时间"
             />
             <span className="px-1 text-[11px] text-slate-400">~</span>
             <input
               name="timeEnd"
-              type="datetime-local"
+              type="date"
               defaultValue={timeEndValue}
-              className="h-6 w-[160px] rounded px-1 text-[11px] outline-none"
+              className="h-6 w-[130px] rounded px-1 text-[11px] outline-none"
               aria-label="结束时间"
             />
           </div>
