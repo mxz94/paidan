@@ -142,6 +142,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       isDeleted: false,
       status: "PENDING",
       claimedById: null,
+      convertedToPreciseAt: null,
       createdAt: { lte: before24h },
     },
     select: {
