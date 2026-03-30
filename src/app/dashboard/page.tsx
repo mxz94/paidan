@@ -113,10 +113,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const range = getPeriodRange(period, anchor);
 
   const orderStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
-  const pendingTimeoutStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
-  const claimTimeoutStoreWhere = activeStoreId ? { claimedBy: { is: { storeId: activeStoreId } } } : {};
-  const before24h = new Date(anchor.getTime() - 24 * 60 * 60 * 1000);
-  const before72h = new Date(anchor.getTime() - 72 * 60 * 60 * 1000);
+  const timeoutRecordStoreWhere = activeStoreId ? { operator: { storeId: activeStoreId } } : {};
 
   const [
     totalOrders,
@@ -126,8 +123,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     saleClaimRaw,
     inProgressRaw,
     periodStoreOrders,
-    pendingTimeoutOrders,
-    claimTimeoutOrders,
+    timeoutTransferRecords,
     saleFinishEndRecords,
   ] = await Promise.all([
     prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere, ...orderStoreWhere } }),
@@ -209,37 +205,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       },
       take: 5000,
     }),
-    prisma.dispatchOrder.findMany({
+    prisma.dispatchOrderRecord.findMany({
       where: {
-        isDeleted: false,
+        actionType: "AUTO_TRANSFER",
         ...tenantWhere,
-        ...pendingTimeoutStoreWhere,
-        status: "PENDING",
-        createdAt: { lte: before24h },
+        ...timeoutRecordStoreWhere,
+        createdAt: { gte: range.start, lte: range.end },
       },
       select: {
-        createdBy: { select: { storeId: true } },
-      },
-      take: 5000,
-    }),
-    prisma.dispatchOrder.findMany({
-      where: {
-        isDeleted: false,
-        ...tenantWhere,
-        ...claimTimeoutStoreWhere,
-        status: "CLAIMED",
-        OR: [
-          {
-            appointmentAt: null,
-            claimedAt: { lte: before72h },
-          },
-          {
-            appointmentAt: { not: null, lte: before72h },
-          },
-        ],
-      },
-      select: {
-        claimedBy: { select: { storeId: true } },
+        remark: true,
+        operator: { select: { storeId: true } },
       },
       take: 5000,
     }),
@@ -324,8 +299,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     new Set(
       [
         ...periodStoreOrders.map((x) => x.createdBy.storeId),
-        ...pendingTimeoutOrders.map((x) => x.createdBy.storeId),
-        ...claimTimeoutOrders.map((x) => x.claimedBy?.storeId ?? null),
+        ...timeoutTransferRecords.map((x) => x.operator.storeId ?? null),
       ].filter((x): x is number => typeof x === "number" && Number.isInteger(x) && x > 0),
     ),
   );
@@ -359,18 +333,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .slice(0, 10);
 
   const timeoutMap = new Map<number, { pending24: number; claim72: number }>();
-  for (const row of pendingTimeoutOrders) {
-    const storeId = row.createdBy.storeId ?? 0;
+  for (const row of timeoutTransferRecords) {
+    const storeId = row.operator.storeId ?? 0;
     if (!storeId) continue;
     const current = timeoutMap.get(storeId) ?? { pending24: 0, claim72: 0 };
-    current.pending24 += 1;
-    timeoutMap.set(storeId, current);
-  }
-  for (const row of claimTimeoutOrders) {
-    const storeId = row.claimedBy?.storeId ?? 0;
-    if (!storeId) continue;
-    const current = timeoutMap.get(storeId) ?? { pending24: 0, claim72: 0 };
-    current.claim72 += 1;
+    const remark = String(row.remark ?? "");
+    if (remark.includes("系统自动转单A")) {
+      current.pending24 += 1;
+    } else if (remark.includes("系统自动转单B") || remark.includes("系统自动转单C")) {
+      current.claim72 += 1;
+    } else {
+      continue;
+    }
     timeoutMap.set(storeId, current);
   }
   const timeoutRows = Array.from(timeoutMap.entries())
@@ -607,7 +581,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900">超时单据统计（按门店）</h2>
-            <span className="text-xs text-slate-500">实时</span>
+            <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
           <div className="mt-3 space-y-2">
             {timeoutRows.length > 0 ? (
