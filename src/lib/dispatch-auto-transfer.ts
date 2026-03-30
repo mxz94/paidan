@@ -163,8 +163,15 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     where: {
       isDeleted: false,
       status: "CLAIMED",
-      appointmentAt: { not: null, lt: now },
-      claimedAt: { lte: before72h },
+      OR: [
+        {
+          appointmentAt: null,
+          claimedAt: { lte: before72h },
+        },
+        {
+          appointmentAt: { not: null, lte: before72h },
+        },
+      ],
       claimedBy: {
         is: {
           accessMode: "SALE",
@@ -307,8 +314,8 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     const noOperation = order.records.length === 0;
     const scenario: Scenario = noOperation ? "sales_72h_noop" : "sales_72h_overdue";
     const remark = noOperation
-      ? `系统自动转单C：业务员领取后超72小时未操作且已过约定日期，转交门店主管 ${supervisor.displayName || supervisor.username}`
-      : `系统自动转单B：业务员进行中单子过约定日期且超72小时，转交门店主管 ${supervisor.displayName || supervisor.username}`;
+      ? `系统自动转单C：进行中单据超72小时未跟进，转交门店主管 ${supervisor.displayName || supervisor.username}`
+      : `系统自动转单B：进行中单据超72小时，转交门店主管 ${supervisor.displayName || supervisor.username}`;
 
     const ok = await transferToSupervisor({
       orderId: order.id,
@@ -334,8 +341,8 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       lines: [
         noOperation ? "### 自动转单C通知" : "### 自动转单B通知",
         noOperation
-          ? "- 规则：业务员领取后超过72小时未操作，且已过约定日期"
-          : "- 规则：业务员进行中单子，过约定日期且超过72小时",
+          ? "- 规则：进行中单据超72小时未跟进（无约定时间按领取时间，有约定时间按约定时间）"
+          : "- 规则：进行中单据超72小时（无约定时间按领取时间，有约定时间按约定时间）",
         `- 单据ID：${order.id}`,
         `- 标题：${order.title || "-"}`,
         `- 约定时间：${appointmentText}`,
