@@ -592,6 +592,7 @@ export async function toggleUserDisabled(formData: FormData) {
 
 export async function softDeleteUser(formData: FormData) {
   await ensureUserManageColumns();
+  await ensureUserPackageBindingTable();
   const { session, me } = await ensureUserManagePermission();
   const parsed = idOnlySchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) {
@@ -678,6 +679,11 @@ export async function softDeleteUser(formData: FormData) {
       where: { id: target.id },
       data: { isDeleted: true, isDisabled: true },
     });
+    await tx.$executeRawUnsafe(
+      `DELETE FROM "UserPackageBinding" WHERE "tenantId" = ? AND "userId" = ?`,
+      Number(me.tenantId),
+      target.id,
+    );
   });
 
   revalidatePath("/dashboard/users");
