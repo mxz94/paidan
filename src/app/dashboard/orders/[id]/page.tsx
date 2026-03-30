@@ -1,6 +1,7 @@
 ﻿import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
@@ -68,16 +69,21 @@ export default async function OrderDetailPage({
 
   const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const canViewStoreAll = hasStoreDataScope(me.role.code, me.role.dataScope) && Number(me.storeId) > 0;
-  const where = {
+  const where: Prisma.DispatchOrderWhereInput = {
     id: orderId,
     isDeleted: false,
     ...(me.tenantId ? { tenantId: me.tenantId } : {}),
-    ...(canViewTenantAll
-      ? {}
-      : canViewStoreAll
-        ? { createdBy: { storeId: Number(me.storeId) } }
-        : { createdById: Number(session.user.id) }),
   };
+  if (!canViewTenantAll) {
+    if (canViewStoreAll) {
+      where.OR = [
+        { createdBy: { storeId: Number(me.storeId) } },
+        { convertedToPreciseById: Number(session.user.id) },
+      ];
+    } else {
+      where.createdById = Number(session.user.id);
+    }
+  }
 
   const order = await prisma.dispatchOrder.findFirst({
     where,

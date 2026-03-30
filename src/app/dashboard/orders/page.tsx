@@ -267,7 +267,10 @@ export default async function OrdersPage({
   const where: Prisma.DispatchOrderWhereInput = { tenantId: me.tenantId, isDeleted: false };
   if (!canViewTenantAll) {
     if (hasStoreDataScope(me.role.code, me.role.dataScope) && me.storeId) {
-      where.createdBy = { storeId: Number(me.storeId) };
+      where.OR = [
+        { createdBy: { storeId: Number(me.storeId) } },
+        { convertedToPreciseById: Number(session.user.id) },
+      ];
     } else {
       where.createdById = Number(session.user.id);
     }
