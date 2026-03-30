@@ -228,8 +228,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         ...tenantWhere,
         ...claimTimeoutStoreWhere,
         status: "CLAIMED",
-        claimedAt: { lte: before72h },
-        appointmentAt: { not: null, lt: anchor },
+        OR: [
+          {
+            appointmentAt: null,
+            claimedAt: { lte: before72h },
+          },
+          {
+            appointmentAt: { not: null, lte: before72h },
+          },
+        ],
       },
       select: {
         claimedBy: { select: { storeId: true } },
@@ -612,7 +619,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                     </span>
                     <span className="font-bold text-rose-700">{r.total}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">未领取超24h：{r.pending24} · 进行中超72h且过约定：{r.claim72}</div>
+                  <div className="mt-1 text-xs text-slate-500">未领取超24h：{r.pending24} · 进行中超72h：{r.claim72}</div>
                 </div>
               ))
             ) : (
