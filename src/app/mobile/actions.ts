@@ -576,7 +576,7 @@ export async function rescheduleDispatchOrder(formData: FormData): Promise<Mobil
   const snapshot = await getOperatorLocationSnapshot(operatorId);
   const order = await prisma.dispatchOrder.findFirst({
     where: { id: orderId, tenantId, isDeleted: false, status: "CLAIMED", claimedById: operatorId },
-    select: { id: true, address: true, longitude: true, latitude: true },
+    select: { id: true, address: true, longitude: true, latitude: true, remark: true },
   });
   if (!order) {
     return respondMobileAction(formData, "doing", { ok: false, op: "reschedule0", message: "仅可操作本人进行中的单据" });
@@ -595,6 +595,12 @@ export async function rescheduleDispatchOrder(formData: FormData): Promise<Mobil
   }
 
   const updatedCount = await prisma.$transaction(async (tx) => {
+    const mergedRemark = (() => {
+      if (!remark) return undefined;
+      const base = String(order.remark ?? "").trim();
+      const appendText = `【改约】${remark}`;
+      return base ? `${base}\n${appendText}` : appendText;
+    })();
     const updated = await tx.dispatchOrder.updateMany({
       where: { id: orderId, tenantId, isDeleted: false },
       data: {
@@ -602,6 +608,7 @@ export async function rescheduleDispatchOrder(formData: FormData): Promise<Mobil
         address: finalAddress,
         longitude: finalLongitude,
         latitude: finalLatitude,
+        ...(mergedRemark !== undefined ? { remark: mergedRemark } : {}),
       },
     });
     if (updated.count <= 0) {

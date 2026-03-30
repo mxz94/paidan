@@ -6,13 +6,14 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
-import { LUOYANG_REGION_TREE, getLuoyangTowns } from "@/lib/regions";
+import { LUOYANG_REGION_TREE } from "@/lib/regions";
 import { batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
 import { OrderCreateModal } from "@/components/order-create-modal";
 import { OrderListMapModal } from "@/components/order-list-map-modal";
 import { OrderLocationMapButton } from "@/components/order-location-map-button";
 import { OrderPhotoLightbox } from "@/components/order-photo-lightbox";
 import { BatchSelectAllCheckbox } from "@/components/batch-select-all-checkbox";
+import { OrdersFilterForm } from "@/components/orders-filter-form";
 
 type SearchParams = Promise<{
   created?: string;
@@ -95,12 +96,6 @@ function parseTimeRangeInput(value: string) {
   const start = parseDateTime(parts[0] ?? "");
   const end = parseDateTime(parts[1] ?? "");
   return { start, end };
-}
-
-function formatDateTimeLocal(value: Date | null) {
-  if (!value) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
 }
 
 function formatDateInput(value: Date | null) {
@@ -261,7 +256,6 @@ export default async function OrdersPage({
   const timeEndValue = formatDateInput(timeEnd);
   const sortBy: SortBy = isSortBy(rawSortBy) ? rawSortBy : "createdAt";
   const sortDir: SortDir = rawSortDir === "asc" ? "asc" : "desc";
-  const townOptions = district ? getLuoyangTowns(district) : [];
 
   const pageSize = Math.min(Math.max(Number(params.pageSize ?? 10), 10), 100);
   const page = Math.max(Number(params.page ?? 1), 1);
@@ -484,6 +478,7 @@ export default async function OrdersPage({
     sortBy,
     sortDir,
   };
+  const listBackHref = `/dashboard/orders?${buildQuery(commonQuery)}`;
   const sortQueryBase = {
     pageSize,
     keyword,
@@ -540,127 +535,23 @@ export default async function OrdersPage({
       </header>
 
       <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <form className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
-          <input type="hidden" name="pageSize" value={pageSize} />
-          <input type="hidden" name="sortBy" value={sortBy} />
-          <input type="hidden" name="sortDir" value={sortDir} />
-          <input
-            name="keyword"
-            defaultValue={keyword}
-            placeholder="关键字：标题/地址/手机号/创建人/领取人/转精准人"
-            className="h-8 w-56 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          />
-          <div className="flex h-8 w-[300px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-1">
-            <input
-              name="timeStart"
-              type="date"
-              defaultValue={timeStartValue}
-              className="h-6 w-[130px] rounded px-1 text-[11px] outline-none"
-              aria-label="开始时间"
-            />
-            <span className="px-1 text-[11px] text-slate-400">~</span>
-            <input
-              name="timeEnd"
-              type="date"
-              defaultValue={timeEndValue}
-              className="h-6 w-[130px] rounded px-1 text-[11px] outline-none"
-              aria-label="结束时间"
-            />
-          </div>
-          <select
-            name="status"
-            defaultValue={status}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">全部状态</option>
-            <option value="PENDING">未领取</option>
-            <option value="CLAIMED">已领取</option>
-            <option value="DONE">已办理</option>
-            <option value="ENDED">不办理</option>
-          </select>
-          <select
-            name="timeout"
-            defaultValue={timeout}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">超时全部</option>
-            <option value="1">超时过</option>
-            <option value="0">未超时过</option>
-          </select>
-          <select
-            name="district"
-            defaultValue={district}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">全部区/县</option>
-            {regionTree.map((item) => (
-              <option key={item.district} value={item.district}>
-                {item.district}
-              </option>
-            ))}
-          </select>
-          <select
-            name="town"
-            defaultValue={town}
-            className="h-8 w-36 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">全部镇/街道</option>
-            {townOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <select
-            name="createdById"
-            defaultValue={createdByIdRaw}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">创建人</option>
-            {filterUsers.map((user) => (
-              <option key={`created-${user.id}`} value={user.id}>
-                {user.displayName || user.username}
-              </option>
-            ))}
-          </select>
-          <select
-            name="claimedById"
-            defaultValue={claimedByIdRaw}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">领取人</option>
-            {filterUsers.map((user) => (
-              <option key={`claimed-${user.id}`} value={user.id}>
-                {user.displayName || user.username}
-              </option>
-            ))}
-          </select>
-          <select
-            name="convertedById"
-            defaultValue={convertedByIdRaw}
-            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
-          >
-            <option value="">转精准人</option>
-            {filterUsers.map((user) => (
-              <option key={`converted-${user.id}`} value={user.id}>
-                {user.displayName || user.username}
-              </option>
-            ))}
-          </select>
-          <input type="hidden" name="page" value="1" />
-          <button
-            type="submit"
-            className="h-8 shrink-0 rounded-md bg-slate-900 px-2.5 text-[11px] font-semibold text-white transition hover:bg-slate-800"
-          >
-            筛选
-          </button>
-          <Link
-            href={`/dashboard/orders?${buildQuery({ pageSize, sortBy, sortDir })}`}
-            className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-slate-300 px-2.5 text-[11px] font-semibold leading-none text-slate-700 transition hover:bg-slate-50"
-          >
-            重置
-          </Link>
-        </form>
+        <OrdersFilterForm
+          pageSize={pageSize}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          keyword={keyword}
+          status={status}
+          timeout={timeout}
+          district={district}
+          town={town}
+          createdByIdRaw={createdByIdRaw}
+          claimedByIdRaw={claimedByIdRaw}
+          convertedByIdRaw={convertedByIdRaw}
+          timeStartValue={timeStartValue}
+          timeEndValue={timeEndValue}
+          districtOptions={regionTree.map((item) => item.district)}
+          filterUsers={filterUsers}
+        />
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-2">
             <OrderListMapModal
@@ -905,7 +796,7 @@ export default async function OrdersPage({
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex gap-2 text-blue-600">
-                      <Link href={`/dashboard/orders/${item.id}`}>详情</Link>
+                      <Link href={`/dashboard/orders/${item.id}?back=${encodeURIComponent(listBackHref)}`}>详情</Link>
                       {item.status === "PENDING" && (isAdmin || item.createdById === Number(session.user.id)) ? (
                         <Link href={`/dashboard/orders/${item.id}/edit`}>编辑</Link>
                       ) : null}

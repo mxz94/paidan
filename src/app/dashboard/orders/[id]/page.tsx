@@ -10,7 +10,7 @@ import { RecordTrackMapButton } from "@/components/record-track-map-button";
 
 type Params = Promise<{ id: string }>;
 
-type SearchParams = Promise<{ updated?: string; op?: string }>;
+type SearchParams = Promise<{ updated?: string; op?: string; back?: string }>;
 
 const statusLabel: Record<string, string> = {
   PENDING: "未领取",
@@ -61,6 +61,8 @@ export default async function OrderDetailPage({
 
   const routeParams = await params;
   const query = await searchParams;
+  const backHrefRaw = String(query.back ?? "").trim();
+  const backHref = backHrefRaw.startsWith("/dashboard/orders") ? backHrefRaw : "/dashboard/orders";
 
   const orderId = Number(routeParams.id);
   if (!Number.isInteger(orderId) || orderId <= 0) {
@@ -170,7 +172,7 @@ export default async function OrderDetailPage({
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/dashboard/orders"
+              href={backHref}
               className="rounded-xl border border-white/40 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
             >
               返回列表
