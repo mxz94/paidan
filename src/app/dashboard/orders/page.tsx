@@ -36,6 +36,7 @@ type SearchParams = Promise<{
   timeRange?: string;
   timeStart?: string;
   timeEnd?: string;
+  timeout?: string;
 }>;
 
 const customerTypes = ["精准", "客服"];
@@ -239,6 +240,7 @@ export default async function OrdersPage({
   const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const keyword = String(params.keyword ?? "").trim();
   const status = String(params.status ?? "").trim();
+  const timeout = String(params.timeout ?? "").trim();
   const district = String(params.district ?? "").trim();
   const town = String(params.town ?? "").trim();
   const createdByIdRaw = String(params.createdById ?? "").trim();
@@ -325,6 +327,23 @@ export default async function OrdersPage({
   }
   if (Number.isInteger(convertedByFilter) && convertedByFilter > 0) {
     andConditions.push({ convertedToPreciseById: convertedByFilter });
+  }
+  if (timeout === "1") {
+    andConditions.push({
+      records: {
+        some: {
+          actionType: "AUTO_TRANSFER",
+        },
+      },
+    });
+  } else if (timeout === "0") {
+    andConditions.push({
+      records: {
+        none: {
+          actionType: "AUTO_TRANSFER",
+        },
+      },
+    });
   }
   if (timeStart || timeEnd) {
     const timeRange = {
@@ -454,6 +473,7 @@ export default async function OrdersPage({
     pageSize,
     keyword,
     status,
+    timeout,
     district,
     town,
     createdById: createdByIdRaw,
@@ -468,6 +488,7 @@ export default async function OrdersPage({
     pageSize,
     keyword,
     status,
+    timeout,
     district,
     town,
     createdById: createdByIdRaw,
@@ -556,6 +577,15 @@ export default async function OrdersPage({
             <option value="CLAIMED">已领取</option>
             <option value="DONE">已办理</option>
             <option value="ENDED">不办理</option>
+          </select>
+          <select
+            name="timeout"
+            defaultValue={timeout}
+            className="h-8 w-28 shrink-0 rounded-md border border-slate-300 px-2 text-[11px] outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200"
+          >
+            <option value="">超时全部</option>
+            <option value="1">超时过</option>
+            <option value="0">未超时过</option>
           </select>
           <select
             name="district"
