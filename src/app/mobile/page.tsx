@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { LUOYANG_REGIONS } from "@/lib/regions";
 import { canAccessMobile } from "@/lib/user-access";
 import { touchUserDailyActive } from "@/lib/user-activity";
+import { ensureUserPackageBindingTable, getAllowedPackageIdsForUser } from "@/lib/user-package-bindings";
 import { MobileTopPanel } from "@/components/mobile-top-panel";
 import { MobileOrdersPanel } from "@/components/mobile-orders-panel";
 import { MobileAutoLocationRefresh } from "@/components/mobile-auto-location-refresh";
@@ -65,6 +66,7 @@ const opMessage: Record<string, { text: string; cls: string }> = {
 export default async function MobilePage({ searchParams }: { searchParams: SearchParams }) {
   await ensureDispatchOrderBusinessColumns();
   await ensureDispatchRecordGpsColumns();
+  await ensureUserPackageBindingTable();
   const session = await getAuthSession();
 
   if (!session?.user?.id) {
@@ -94,9 +96,17 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
   const selectedRegionRaw = String(params.region ?? "").trim() || "AUTO";
 
   const baseWhere: Prisma.DispatchOrderWhereInput = { isDeleted: false, tenantId: me.tenantId };
+  const saleAllowedPackageIds =
+    me.accessMode === "SALE" ? await getAllowedPackageIdsForUser(Number(me.tenantId), me.id) : [];
 
   if (tab === "new") {
     baseWhere.status = "PENDING";
+    if (me.accessMode === "SALE" && saleAllowedPackageIds.length > 0) {
+      baseWhere.OR = [
+        { packageId: { in: saleAllowedPackageIds } },
+        { packageId: null },
+      ];
+    }
   } else if (tab === "doing") {
     baseWhere.status = "CLAIMED";
     baseWhere.claimedById = me.id;

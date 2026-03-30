@@ -1,10 +1,17 @@
 ﻿"use client";
 
 import { useState } from "react";
+import { MultiSelectDropdown } from "@/components/multi-select-dropdown";
 
 type RoleOption = {
   id: number;
   name: string;
+};
+
+type PackageOption = {
+  id: number;
+  name: string;
+  code: string;
 };
 
 type Props = {
@@ -16,7 +23,9 @@ type Props = {
   defaultCanClaimOrders?: boolean;
   defaultPreciseClaimLimit?: number | null;
   defaultServiceClaimLimit?: number | null;
+  defaultAllowedPackageIds?: number[];
   roles: RoleOption[];
+  packages: PackageOption[];
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -29,12 +38,18 @@ export function UserEditModal({
   defaultCanClaimOrders = true,
   defaultPreciseClaimLimit = null,
   defaultServiceClaimLimit = null,
+  defaultAllowedPackageIds = [],
   roles = [],
+  packages = [],
   action,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [userType, setUserType] = useState<"SUPERVISOR" | "SERVICE" | "SALE">(defaultAccessMode);
+  const [allowedPackageIds, setAllowedPackageIds] = useState<string[]>(
+    defaultAllowedPackageIds.map((item) => String(item)),
+  );
   const safeRoles = Array.isArray(roles) ? roles : [];
+  const safePackages = Array.isArray(packages) ? packages : [];
   const firstRoleId = (() => {
     for (const role of safeRoles) {
       return role.id;
@@ -175,6 +190,25 @@ export function UserEditModal({
                   placeholder="不填写则保持原密码"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
                 />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm text-slate-600">可领取套餐（未选即所有）</span>
+                <MultiSelectDropdown
+                  options={safePackages.map((pkg) => ({
+                    value: String(pkg.id),
+                    label: `${pkg.name} (${pkg.code})`,
+                  }))}
+                  value={allowedPackageIds}
+                  onChange={setAllowedPackageIds}
+                  disabled={userType !== "SALE" || safePackages.length === 0}
+                  placeholder="请选择可领取套餐（可多选）"
+                />
+                {userType === "SALE"
+                  ? allowedPackageIds.map((id) => (
+                      <input key={id} type="hidden" name="allowedPackageIds" value={id} />
+                    ))
+                  : null}
+                <p className="mt-1 text-xs text-slate-500">仅业务员生效。</p>
               </label>
 
               <div className="flex flex-wrap gap-2 pt-2">

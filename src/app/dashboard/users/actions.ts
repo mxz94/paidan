@@ -10,6 +10,7 @@ import { ensureStoreTable, ensureUserManageColumns, ensureUserStoreColumn } from
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant } from "@/lib/tenant";
 import { normalizeAccessMode } from "@/lib/user-access";
+import { ensureUserPackageBindingTable, replaceUserAllowedPackages } from "@/lib/user-package-bindings";
 
 const createUserSchema = z.object({
   username: z.string().trim().min(3).max(30),
@@ -144,6 +145,7 @@ export async function createUser(formData: FormData) {
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
+  await ensureUserPackageBindingTable();
   const { me } = await ensureUserManagePermission();
 
   const longitudeInput = String(formData.get("longitude") ?? "").trim();
@@ -168,6 +170,14 @@ export async function createUser(formData: FormData) {
   if (!parsed.success) {
     redirect("/dashboard/users?err=invalid");
   }
+  const selectedPackageIds = Array.from(
+    new Set(
+      formData
+        .getAll("allowedPackageIds")
+        .map((x) => Number(x))
+        .filter((x) => Number.isInteger(x) && x > 0),
+    ),
+  );
   const scopedStoreId = Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? Number(me.storeId) : null;
   const effectiveStoreId = scopedStoreId ?? parsed.data.storeId;
 
@@ -203,7 +213,7 @@ export async function createUser(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       username: parsed.data.username,
       displayName: parsed.data.displayName,
@@ -223,6 +233,13 @@ export async function createUser(formData: FormData) {
         parsed.data.longitude !== undefined && parsed.data.latitude !== undefined ? new Date() : null,
     },
   });
+  if (parsed.data.accessMode === "SALE") {
+    const valid = await prisma.package.findMany({
+      where: { tenantId: Number(me.tenantId), id: { in: selectedPackageIds } },
+      select: { id: true },
+    });
+    await replaceUserAllowedPackages(Number(me.tenantId), created.id, valid.map((x) => x.id));
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/users");
@@ -400,6 +417,7 @@ export async function updateUser(formData: FormData) {
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
+  await ensureUserPackageBindingTable();
   const { session, me } = await ensureUserManagePermission();
 
   const parsed = updateUserSchema.safeParse({
@@ -422,6 +440,14 @@ export async function updateUser(formData: FormData) {
   if (parsed.data.password && parsed.data.password.length < 6) {
     redirect("/dashboard/users?err=invalid");
   }
+  const selectedPackageIds = Array.from(
+    new Set(
+      formData
+        .getAll("allowedPackageIds")
+        .map((x) => Number(x))
+        .filter((x) => Number.isInteger(x) && x > 0),
+    ),
+  );
 
   const target = await prisma.user.findFirst({
     where: {
@@ -477,6 +503,15 @@ export async function updateUser(formData: FormData) {
       ...(passwordHash ? { passwordHash } : {}),
     },
   });
+  if (parsed.data.accessMode === "SALE") {
+    const valid = await prisma.package.findMany({
+      where: { tenantId: Number(me.tenantId), id: { in: selectedPackageIds } },
+      select: { id: true },
+    });
+    await replaceUserAllowedPackages(Number(me.tenantId), parsed.data.userId, valid.map((x) => x.id));
+  } else {
+    await replaceUserAllowedPackages(Number(me.tenantId), parsed.data.userId, []);
+  }
 
   revalidatePath("/dashboard/users");
   redirect("/dashboard/users?updated=1");

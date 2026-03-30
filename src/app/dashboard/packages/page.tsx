@@ -17,7 +17,7 @@ type SearchParams = Promise<{
 
 const errorText: Record<string, string> = {
   invalid: "请检查输入：代码仅支持大写字母/数字/下划线，价格必须大于0。",
-  exists: "套餐代码已存在，请更换。",
+  exists: "套餐代码或名称已存在，请更换。",
   import_file: "请选择要导入的文件。",
   import_invalid: "导入失败：文件格式或数据内容不正确，请检查后重试。",
   import_limit: "导入失败：单次最多导入 500 条数据。",

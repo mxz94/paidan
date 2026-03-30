@@ -75,6 +75,11 @@ export async function createPackage(formData: FormData) {
 
   const exists = await prisma.package.findUnique({ where: { code: parsed.data.code }, select: { id: true } });
   if (exists) redirect("/dashboard/packages?err=exists");
+  const nameExists = await prisma.package.findFirst({
+    where: { tenantId: Number(me.tenantId), name: parsed.data.name },
+    select: { id: true },
+  });
+  if (nameExists) redirect("/dashboard/packages?err=exists");
 
   await prisma.$transaction(async (tx) => {
     if (parsed.data.isDefault === "1") {
@@ -140,6 +145,7 @@ export async function importPackages(formData: FormData) {
 
   const parsedRows: Array<z.infer<typeof importPackageRowSchema>> = [];
   const seenCodes = new Set<string>();
+  const seenNames = new Set<string>();
 
   for (const row of dataRows) {
     const rawCode = String(row[codeIdx] ?? "").trim().toUpperCase();
@@ -152,9 +158,12 @@ export async function importPackages(formData: FormData) {
       isDefault: parseBoolean(defaultIdx != null ? row[defaultIdx] : "", false),
     });
 
-    if (!parsed.success || seenCodes.has(rawCode)) redirect("/dashboard/packages?err=import_invalid");
+    if (!parsed.success || seenCodes.has(rawCode) || seenNames.has(parsed.data.name)) {
+      redirect("/dashboard/packages?err=import_invalid");
+    }
 
     seenCodes.add(rawCode);
+    seenNames.add(parsed.data.name);
     parsedRows.push(parsed.data);
   }
 
@@ -167,6 +176,15 @@ export async function importPackages(formData: FormData) {
     for (const item of parsedRows) {
       const existed = await tx.package.findUnique({ where: { code: item.code }, select: { id: true, tenantId: true } });
       if (existed && existed.tenantId !== Number(me.tenantId)) redirect("/dashboard/packages?err=exists");
+      const sameName = await tx.package.findFirst({
+        where: {
+          tenantId: Number(me.tenantId),
+          name: item.name,
+          ...(existed ? { id: { not: existed.id } } : {}),
+        },
+        select: { id: true },
+      });
+      if (sameName) redirect("/dashboard/packages?err=exists");
       if (existed) {
         await tx.package.update({
           where: { id: existed.id },
@@ -227,6 +245,15 @@ export async function updatePackage(formData: FormData) {
     select: { id: true },
   });
   if (codeExists) redirect("/dashboard/packages?err=exists");
+  const nameExists = await prisma.package.findFirst({
+    where: {
+      tenantId: Number(me.tenantId),
+      name: parsed.data.name,
+      id: { not: parsed.data.packageId },
+    },
+    select: { id: true },
+  });
+  if (nameExists) redirect("/dashboard/packages?err=exists");
 
   await prisma.$transaction(async (tx) => {
     if (parsed.data.isDefault === "1") {

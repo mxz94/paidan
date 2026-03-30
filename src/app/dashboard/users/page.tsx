@@ -8,6 +8,7 @@ import { UserEditModal } from "@/components/user-edit-modal";
 import { UserImportModal } from "@/components/user-import-modal";
 import { UserLocationMapButton } from "@/components/user-location-map-button";
 import { UserLocationsMapModal } from "@/components/user-locations-map-modal";
+import { ensureUserPackageBindingTable, getAllowedPackageIdsMapForUsers } from "@/lib/user-package-bindings";
 
 type SearchParams = Promise<{
   created?: string;
@@ -60,6 +61,7 @@ export default async function UsersPage({
   await ensureStoreTable();
   await ensureUserManageColumns();
   await ensureUserStoreColumn();
+  await ensureUserPackageBindingTable();
 
   const session = await getAuthSession();
   if (!session?.user?.id) {
@@ -92,12 +94,17 @@ export default async function UsersPage({
 
   const params = await searchParams;
   const scopedStoreId = Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? Number(me.storeId) : undefined;
-  const [roles, stores] = await Promise.all([
+  const [roles, stores, packages] = await Promise.all([
     prisma.role.findMany({ where: { tenantId: Number(me.tenantId) }, orderBy: { id: "asc" } }),
     prisma.store.findMany({
       where: { tenantId: Number(me.tenantId), isDeleted: false, ...(scopedStoreId ? { id: scopedStoreId } : {}) },
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.package.findMany({
+      where: { tenantId: Number(me.tenantId), isActive: true },
+      select: { id: true, name: true, code: true },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     }),
   ]);
 
@@ -166,6 +173,10 @@ export default async function UsersPage({
       },
     ]),
   );
+  const allowedPackageMap = await getAllowedPackageIdsMapForUsers(
+    Number(me.tenantId),
+    users.map((user) => user.id),
+  );
 
   const mapUsers = await prisma.user.findMany({
     where: queryWhere,
@@ -209,6 +220,7 @@ export default async function UsersPage({
             <UserCreateModal
               roles={roles.map((item) => ({ id: item.id, name: item.name }))}
               stores={stores.map((item) => ({ id: item.id, name: item.name }))}
+              packages={packages.map((item) => ({ id: item.id, name: item.name, code: item.code }))}
               fixedStore={scopedStoreId ? { id: scopedStoreId, name: stores[0]?.name ?? "当前门店" } : undefined}
               action={async (formData) => {
                 "use server";
@@ -349,7 +361,9 @@ export default async function UsersPage({
                           defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                           defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
                           defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
+                          defaultAllowedPackageIds={allowedPackageMap.get(user.id) ?? []}
                           roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+                          packages={packages.map((item) => ({ id: item.id, name: item.name, code: item.code }))}
                           action={async (formData) => {
                             "use server";
                             const { updateUser } = await import("./actions");
@@ -367,7 +381,9 @@ export default async function UsersPage({
                             defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                             defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
                             defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
+                            defaultAllowedPackageIds={allowedPackageMap.get(user.id) ?? []}
                             roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+                            packages={packages.map((item) => ({ id: item.id, name: item.name, code: item.code }))}
                             action={async (formData) => {
                               "use server";
                               const { updateUser } = await import("./actions");

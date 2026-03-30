@@ -8,6 +8,7 @@ import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns, ens
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
+import { ensureUserPackageBindingTable, getAllowedPackageIdsForUser } from "@/lib/user-package-bindings";
 
 const DEFAULT_PRECISE_DAILY_LIMIT = 3;
 const DEFAULT_SERVICE_DAILY_LIMIT = 20;
@@ -189,6 +190,7 @@ async function geocodeAddressWithRetry(address: string, throttle: () => Promise<
 export async function claimDispatchOrder(formData: FormData) {
   await ensureDispatchRecordGpsColumns();
   await ensureUserManageColumns();
+  await ensureUserPackageBindingTable();
   const session = await getAuthSession();
   if (!session?.user?.id) redirect("/login");
 
@@ -245,9 +247,17 @@ export async function claimDispatchOrder(formData: FormData) {
       status: "PENDING",
       claimedById: null,
     },
-    select: { id: true, customerType: true },
+    select: { id: true, customerType: true, packageId: true },
   });
   if (!targetOrder) redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
+  const allowedPackageIds = await getAllowedPackageIdsForUser(tenantId, operatorId);
+  if (
+    allowedPackageIds.length > 0 &&
+    targetOrder.packageId != null &&
+    !allowedPackageIds.includes(targetOrder.packageId)
+  ) {
+    redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
+  }
 
   const isPreciseOrder = isPreciseCustomerType(targetOrder.customerType);
   if (!claimLimitDisabled) {
