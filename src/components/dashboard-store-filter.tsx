@@ -10,7 +10,7 @@ type StoreItem = {
 type Props = {
   stores: StoreItem[];
   activeStoreId?: number;
-  period: "day" | "week" | "month";
+  period: "day" | "week" | "month" | "lastMonth";
   disabled?: boolean;
 };
 
