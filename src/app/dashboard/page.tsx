@@ -6,11 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { DashboardStoreFilter } from "@/components/dashboard-store-filter";
 import { canAccessMobile, resolveDashboardLandingPathByMenus } from "@/lib/user-access";
 
-type PeriodType = "day" | "week" | "month";
+type PeriodType = "day" | "week" | "month" | "lastMonth";
 
 type SearchParams = Promise<{
   storeId?: string;
   period?: string;
+  date?: string;
+  dateStart?: string;
+  dateEnd?: string;
 }>;
 
 function getPeriodRange(type: PeriodType, anchor = new Date()) {
@@ -32,6 +35,12 @@ function getPeriodRange(type: PeriodType, anchor = new Date()) {
     return { start, end };
   }
 
+  if (type === "lastMonth") {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1, 0, 0, 0, 0);
+    const end = new Date(anchor.getFullYear(), anchor.getMonth(), 0, 23, 59, 59, 999);
+    return { start, end };
+  }
+
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1, 0, 0, 0, 0);
   const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999);
   return { start, end };
@@ -43,6 +52,24 @@ function buildQuery(params: Record<string, string | number | undefined>) {
     if (v !== undefined && v !== "") qs.set(k, String(v));
   });
   return qs.toString();
+}
+
+function formatDateInput(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function parseDateBoundary(value: string, boundary: "start" | "end") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  if (boundary === "start") {
+    date.setHours(0, 0, 0, 0);
+  } else {
+    date.setHours(23, 59, 59, 999);
+  }
+  return date;
 }
 
 
@@ -108,9 +135,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       : defaultStoreId;
 
   const periodRaw = String(params.period ?? "day") as PeriodType;
-  const period: PeriodType = periodRaw === "week" || periodRaw === "month" ? periodRaw : "day";
-  const anchor = new Date();
-  const range = getPeriodRange(period, anchor);
+  const period: PeriodType =
+    periodRaw === "week" || periodRaw === "month" || periodRaw === "lastMonth" ? periodRaw : "day";
+  const dateStartRaw = String(params.dateStart ?? "").trim();
+  const dateEndRaw = String(params.dateEnd ?? "").trim();
+  const dateStart = parseDateBoundary(dateStartRaw, "start");
+  const dateEnd = parseDateBoundary(dateEndRaw, "end");
+  const dateRaw = String(params.date ?? "").trim();
+  const parsedDate = dateRaw ? new Date(`${dateRaw}T00:00:00`) : null;
+  const anchor = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date();
+  const activeDate = formatDateInput(anchor);
+  const range =
+    dateStart || dateEnd
+      ? { start: dateStart ?? new Date(0), end: dateEnd ?? new Date(8640000000000000) }
+      : getPeriodRange(period, anchor);
 
   const orderStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const timeoutRecordStoreWhere = activeStoreId ? { operator: { storeId: activeStoreId } } : {};
@@ -121,10 +159,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     serviceEntryRaw,
     serviceInvalidRaw,
     saleClaimRaw,
+    doneRankRaw,
     inProgressRaw,
     periodStoreOrders,
     timeoutTransferRecords,
-    saleFinishEndRecords,
   ] = await Promise.all([
     prisma.dispatchOrder.count({ where: { isDeleted: false, ...tenantWhere, ...orderStoreWhere } }),
     prisma.dispatchOrder.groupBy({
@@ -181,6 +219,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         isDeleted: false,
         ...tenantWhere,
+        status: "DONE",
+        updatedAt: { gte: range.start, lte: range.end },
+        claimedById: { not: null },
+        claimedBy: {
+          is: {
+            accessMode: { in: ["SALE", "SUPERVISOR"] },
+            isDeleted: false,
+            ...(activeStoreId ? { storeId: activeStoreId } : {}),
+          },
+        },
+      },
+      _count: { _all: true },
+    }),
+    prisma.dispatchOrder.groupBy({
+      by: ["claimedById"],
+      where: {
+        isDeleted: false,
+        ...tenantWhere,
         status: "CLAIMED",
         claimedById: { not: null },
         claimedBy: {
@@ -218,21 +274,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       },
       take: 5000,
     }),
-    prisma.dispatchOrderRecord.findMany({
-      where: {
-        actionType: { in: ["FINISH", "END"] },
-        ...tenantWhere,
-        createdAt: { gte: range.start, lte: range.end },
-        operator: { accessMode: "SALE", isDeleted: false, ...(activeStoreId ? { storeId: activeStoreId } : {}) },
-      },
-      select: {
-        operatorId: true,
-        createdAt: true,
-        operator: { select: { displayName: true, username: true } },
-        order: { select: { claimedAt: true } },
-      },
-      take: 8000,
-    }),
   ]);
 
   const statusCountMap = new Map<string, number>();
@@ -247,6 +288,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       ...serviceEntryRaw.map((x) => x.createdById),
       ...serviceInvalidRaw.map((x) => x.createdById),
       ...saleClaimRaw.map((x) => x.operatorId),
+      ...doneRankRaw.map((x) => x.claimedById).filter((x): x is number => typeof x === "number"),
       ...inProgressRaw.map((x) => x.claimedById).filter((x): x is number => typeof x === "number"),
     ]),
   );
@@ -282,9 +324,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       count: x._count._all,
     }));
 
+  const doneRankRows = [...doneRankRaw]
+    .filter((x): x is typeof x & { claimedById: number } => typeof x.claimedById === "number")
+    .sort((a, b) => b._count._all - a._count._all)
+    .map((x) => ({
+      id: x.claimedById,
+      name: userMap.get(x.claimedById)?.displayName || userMap.get(x.claimedById)?.username || `用户#${x.claimedById}`,
+      count: x._count._all,
+    }));
+
   const serviceEntryTotal = serviceEntryRows.reduce((sum, item) => sum + item.count, 0);
   const serviceInvalidTotal = serviceInvalidRows.reduce((sum, item) => sum + item.count, 0);
   const saleClaimTotal = saleClaimRows.reduce((sum, item) => sum + item.count, 0);
+  const doneRankTotal = doneRankRows.reduce((sum, item) => sum + item.count, 0);
   const inProgressRows = [...inProgressRaw]
     .filter((x): x is typeof x & { claimedById: number } => typeof x.claimedById === "number")
     .sort((a, b) => b._count._all - a._count._all)
@@ -375,38 +427,43 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .sort((a, b) => b.rate - a.rate || b.invalid - a.invalid || b.entry - a.entry)
     .slice(0, 10);
 
-  const saleEfficiencyMap = new Map<number, { sumHours: number; count: number; name: string }>();
-  for (const row of saleFinishEndRecords) {
-    const claimedAt = row.order.claimedAt;
-    if (!claimedAt) continue;
-    const diffMs = row.createdAt.getTime() - claimedAt.getTime();
-    if (diffMs < 0) continue;
-    const diffHours = diffMs / (1000 * 60 * 60);
-    const current = saleEfficiencyMap.get(row.operatorId) ?? {
-      sumHours: 0,
-      count: 0,
-      name: row.operator.displayName || row.operator.username || `用户#${row.operatorId}`,
-    };
-    current.sumHours += diffHours;
-    current.count += 1;
-    saleEfficiencyMap.set(row.operatorId, current);
-  }
-  const saleEfficiencyRows = Array.from(saleEfficiencyMap.entries())
-    .map(([userId, x]) => ({
-      userId,
-      name: x.name,
-      avgHours: x.count > 0 ? x.sumHours / x.count : 0,
-      count: x.count,
-    }))
-    .sort((a, b) => a.avgHours - b.avgHours || b.count - a.count)
+  const saleClaimCountMap = new Map(saleClaimRows.map((item) => [item.id, item.count]));
+  const saleDoneCountMap = new Map(doneRankRows.map((item) => [item.id, item.count]));
+  const saleConvertRows = Array.from(new Set([...saleClaimCountMap.keys(), ...saleDoneCountMap.keys()]))
+    .map((userId) => {
+      const claimed = saleClaimCountMap.get(userId) ?? 0;
+      const done = saleDoneCountMap.get(userId) ?? 0;
+      const rate = claimed > 0 ? Math.round((done / claimed) * 100) : 0;
+      return {
+        userId,
+        name: userMap.get(userId)?.displayName || userMap.get(userId)?.username || `用户#${userId}`,
+        claimed,
+        done,
+        rate,
+      };
+    })
+    .sort((a, b) => b.rate - a.rate || b.done - a.done || b.claimed - a.claimed)
     .slice(0, 10);
+
 
   const baseQuery = {
     storeId: activeStoreId,
     period,
+    date: activeDate,
+    dateStart: dateStartRaw,
+    dateEnd: dateEndRaw,
   };
 
-  const periodLabel = period === "day" ? "本日" : period === "week" ? "本周" : "本月";
+  const periodLabel =
+    dateStart || dateEnd
+      ? "自定义区间"
+      : period === "day"
+        ? "本日"
+        : period === "week"
+          ? "本周"
+          : period === "lastMonth"
+            ? "上月"
+            : "本月";
 
   return (
     <section className="space-y-5">
@@ -434,6 +491,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 { key: "day", label: "本日" },
                 { key: "week", label: "本周" },
                 { key: "month", label: "本月" },
+                { key: "lastMonth", label: "上月" },
               ] as const).map((x) => (
                 <Link
                   key={x.key}
@@ -445,18 +503,44 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               ))}
             </div>
 
+            <form className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/40 bg-cyan-400/10 p-1">
+              <input type="hidden" name="storeId" value={activeStoreId ?? ""} />
+              <input type="hidden" name="period" value={period} />
+              <div className="inline-flex items-center rounded-lg border border-white/20 bg-white px-1">
+                <input
+                  type="date"
+                  name="dateStart"
+                  defaultValue={dateStartRaw}
+                  className="h-8 rounded-lg px-2 text-xs text-slate-800 outline-none"
+                />
+                <span className="px-1 text-xs text-slate-400">~</span>
+                <input
+                  type="date"
+                  name="dateEnd"
+                  defaultValue={dateEndRaw}
+                  className="h-8 rounded-lg px-2 text-xs text-slate-800 outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-8 rounded-lg bg-white px-2.5 text-xs font-semibold text-slate-900"
+              >
+                筛选
+              </button>
+            </form>
             <Link href="/dashboard" className="rounded-xl border border-slate-300/40 bg-slate-400/10 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-400/20">
               重置
             </Link>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
             { label: "单据总量", value: totalOrders, tone: "text-cyan-300" },
             { label: "未领取", value: pendingCount, tone: "text-amber-300" },
             { label: "进行中", value: claimedCount, tone: "text-blue-300" },
-            { label: "已结束(已办理+不办理)", value: doneCount + endedCount, tone: "text-emerald-300" },
+            { label: "已办理", value: doneCount, tone: "text-emerald-300" },
+            { label: "不办理", value: endedCount, tone: "text-rose-300" },
           ].map((item) => (
             <article key={item.label} className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur-sm">
               <p className="text-xs text-slate-300">{item.label}</p>
@@ -466,7 +550,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-4">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900">客服录入排行</h2>
@@ -530,6 +614,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </div>
           <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
             合计：<span className="text-emerald-700">{saleClaimTotal}</span> 次
+          </div>
+        </article>
+
+        <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">已办理排行</h2>
+            <span className="text-xs text-slate-500">{periodLabel}</span>
+          </div>
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {doneRankRows.length > 0 ? (
+              doneRankRows.map((r, i) => (
+                <div key={r.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <span className="text-slate-700">{i + 1}. {r.name}</span>
+                  <span className="font-bold text-cyan-700">{r.count} 单</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">暂无数据</p>
+            )}
+          </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-700">
+            合计：<span className="text-cyan-700">{doneRankTotal}</span> 单
           </div>
         </article>
 
@@ -607,7 +713,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <h2 className="text-lg font-bold text-slate-900">客服无效率排行</h2>
             <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
             {serviceEfficiencyRows.length > 0 ? (
               serviceEfficiencyRows.map((r, i) => (
                 <div key={r.userId} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -623,15 +729,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
         <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">业务员处理效率</h2>
+            <h2 className="text-lg font-bold text-slate-900">业务转化率排行</h2>
             <span className="text-xs text-slate-500">{periodLabel}</span>
           </div>
-          <div className="mt-3 space-y-2">
-            {saleEfficiencyRows.length > 0 ? (
-              saleEfficiencyRows.map((r, i) => (
+          <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {saleConvertRows.length > 0 ? (
+              saleConvertRows.map((r, i) => (
                 <div key={r.userId} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 text-sm">
                   <span className="text-slate-700">{i + 1}. {r.name}</span>
-                  <span className="font-bold text-emerald-700">{r.avgHours.toFixed(1)} 小时（{r.count}单）</span>
+                  <span className="font-bold text-emerald-700">{r.rate}%（已办{r.done}/领取{r.claimed}）</span>
                 </div>
               ))
             ) : (
@@ -643,6 +749,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
