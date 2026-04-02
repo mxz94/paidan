@@ -452,8 +452,12 @@ export async function finishDispatchOrder(formData: FormData): Promise<MobileAct
         handledPhone: handledPhoneToSave,
         notHandledReason: null,
         customerType: nextCustomerType,
-        convertedToPreciseById: convertToPrecise ? operatorId : null,
-        convertedToPreciseAt: convertToPrecise ? now : null,
+        ...(convertToPrecise
+          ? {
+              convertedToPreciseById: operatorId,
+              convertedToPreciseAt: now,
+            }
+          : {}),
       },
     });
 
