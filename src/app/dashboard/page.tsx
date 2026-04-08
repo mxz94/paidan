@@ -152,6 +152,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const orderStoreWhere = activeStoreId ? { createdBy: { storeId: activeStoreId } } : {};
   const timeoutRecordStoreWhere = activeStoreId ? { operator: { storeId: activeStoreId } } : {};
+  const excludeFlowPackageOrderWhere = {
+    NOT: [
+      { title: { contains: "流量" } },
+      { package: { is: { name: { contains: "流量" } } } },
+    ],
+  };
 
   const [
     totalOrders,
@@ -160,6 +166,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     serviceInvalidRaw,
     saleClaimRaw,
     doneRankRaw,
+    saleClaimConvertRaw,
+    doneConvertRaw,
     inProgressRaw,
     periodStoreOrders,
     timeoutTransferRecords,
@@ -232,6 +240,46 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       },
       _count: { _all: true },
     }),
+    prisma.dispatchOrderRecord.groupBy({
+      by: ["operatorId"],
+      where: {
+        actionType: "CLAIM",
+        ...tenantWhere,
+        createdAt: { gte: range.start, lte: range.end },
+        order: {
+          is: {
+            ...tenantWhere,
+            isDeleted: false,
+            ...excludeFlowPackageOrderWhere,
+          },
+        },
+        operator: {
+          accessMode: { in: ["SALE", "SUPERVISOR"] },
+          isDeleted: false,
+          ...(activeStoreId ? { storeId: activeStoreId } : {}),
+        },
+      },
+      _count: { _all: true },
+    }),
+    prisma.dispatchOrder.groupBy({
+      by: ["claimedById"],
+      where: {
+        isDeleted: false,
+        ...tenantWhere,
+        ...excludeFlowPackageOrderWhere,
+        status: "DONE",
+        updatedAt: { gte: range.start, lte: range.end },
+        claimedById: { not: null },
+        claimedBy: {
+          is: {
+            accessMode: { in: ["SALE", "SUPERVISOR"] },
+            isDeleted: false,
+            ...(activeStoreId ? { storeId: activeStoreId } : {}),
+          },
+        },
+      },
+      _count: { _all: true },
+    }),
     prisma.dispatchOrder.groupBy({
       by: ["claimedById"],
       where: {
@@ -252,6 +300,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       where: {
         isDeleted: false,
         ...tenantWhere,
+        ...excludeFlowPackageOrderWhere,
         ...orderStoreWhere,
         createdAt: { gte: range.start, lte: range.end },
       },
@@ -427,8 +476,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .sort((a, b) => b.rate - a.rate || b.invalid - a.invalid || b.entry - a.entry)
     .slice(0, 10);
 
-  const saleClaimCountMap = new Map(saleClaimRows.map((item) => [item.id, item.count]));
-  const saleDoneCountMap = new Map(doneRankRows.map((item) => [item.id, item.count]));
+  const saleClaimConvertRows = [...saleClaimConvertRaw]
+    .sort((a, b) => b._count._all - a._count._all)
+    .map((x) => ({ id: x.operatorId, count: x._count._all }));
+  const doneConvertRows = [...doneConvertRaw]
+    .filter((x): x is typeof x & { claimedById: number } => typeof x.claimedById === "number")
+    .sort((a, b) => b._count._all - a._count._all)
+    .map((x) => ({ id: x.claimedById, count: x._count._all }));
+
+  const saleClaimCountMap = new Map(saleClaimConvertRows.map((item) => [item.id, item.count]));
+  const saleDoneCountMap = new Map(doneConvertRows.map((item) => [item.id, item.count]));
   const saleConvertRows = Array.from(new Set([...saleClaimCountMap.keys(), ...saleDoneCountMap.keys()]))
     .map((userId) => {
       const claimed = saleClaimCountMap.get(userId) ?? 0;
