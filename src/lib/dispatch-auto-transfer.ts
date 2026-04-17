@@ -187,6 +187,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       region: true,
       address: true,
       appointmentAt: true,
+      convertedToPreciseById: true,
       claimedBy: {
         select: {
           id: true,
@@ -204,6 +205,25 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     orderBy: { appointmentAt: "asc" },
     take: 1000,
   });
+
+  const preciseOwnerIds = Array.from(
+    new Set(
+      salesClaimedOverdue
+        .map((item) => item.convertedToPreciseById)
+        .filter((id): id is number => Number.isInteger(id) && id > 0),
+    ),
+  );
+  const preciseOwners = preciseOwnerIds.length
+    ? await prisma.user.findMany({
+        where: {
+          id: { in: preciseOwnerIds },
+          isDeleted: false,
+          isDisabled: false,
+        },
+        select: { id: true, tenantId: true, displayName: true, username: true },
+      })
+    : [];
+  const preciseOwnerById = new Map(preciseOwners.map((item) => [item.id, item]));
 
   const allStorePairs = new Map<string, { tenantId: number; storeId: number }>();
   for (const item of pendingOrders) {
@@ -299,29 +319,52 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
 
   for (const order of salesClaimedOverdue) {
     const sale = order.claimedBy;
-    const storeId = sale?.storeId;
-    if (!sale || !storeId) {
+    if (!sale) {
       summary.skippedNoSupervisorCount += 1;
       continue;
     }
 
-    const supervisor = supervisorByStore.get(`${order.tenantId}_${storeId}`);
-    if (!supervisor) {
-      summary.skippedNoSupervisorCount += 1;
-      continue;
+    const preciseOwnerCandidate =
+      order.convertedToPreciseById && order.convertedToPreciseById !== sale.id
+        ? preciseOwnerById.get(order.convertedToPreciseById)
+        : undefined;
+    const preciseOwner =
+      preciseOwnerCandidate && preciseOwnerCandidate.tenantId === order.tenantId ? preciseOwnerCandidate : undefined;
+
+    let receiver: { id: number; displayName: string; username: string };
+    let receiverLabel: string;
+    let remarkActionText: string;
+    if (preciseOwner) {
+      receiver = preciseOwner;
+      receiverLabel = "转精准人";
+      remarkActionText = "转回转精准人";
+    } else {
+      const storeId = sale.storeId;
+      if (!storeId) {
+        summary.skippedNoSupervisorCount += 1;
+        continue;
+      }
+      const supervisor = supervisorByStore.get(`${order.tenantId}_${storeId}`);
+      if (!supervisor) {
+        summary.skippedNoSupervisorCount += 1;
+        continue;
+      }
+      receiver = supervisor;
+      receiverLabel = "门店主管";
+      remarkActionText = "转交门店主管";
     }
 
     const noOperation = order.records.length === 0;
     const scenario: Scenario = noOperation ? "sales_72h_noop" : "sales_72h_overdue";
     const remark = noOperation
-      ? `系统自动转单C：进行中单据超72小时未跟进，转交门店主管 ${supervisor.displayName || supervisor.username}`
-      : `系统自动转单B：进行中单据超72小时，转交门店主管 ${supervisor.displayName || supervisor.username}`;
+      ? `系统自动转单C：进行中单据超72小时未跟进，${remarkActionText} ${receiver.displayName || receiver.username}`
+      : `系统自动转单B：进行中单据超72小时，${remarkActionText} ${receiver.displayName || receiver.username}`;
 
     const ok = await transferToSupervisor({
       orderId: order.id,
       tenantId: order.tenantId,
       fromClaimedById: sale.id,
-      supervisorId: supervisor.id,
+      supervisorId: receiver.id,
       remark,
     });
     if (!ok) continue;
@@ -331,13 +374,13 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     } else {
       summary.salesOverdueToSupervisorCount += 1;
     }
-    summary.details.push({ orderId: order.id, scenario, supervisorId: supervisor.id });
+    summary.details.push({ orderId: order.id, scenario, supervisorId: receiver.id });
 
     const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
     const appointmentText = order.appointmentAt ? new Date(order.appointmentAt).toLocaleString("zh-CN") : "-";
     await doNotify({
       title: noOperation ? "自动转单C：领取后72小时未操作" : "自动转单B：进行中超时",
-      atMobile: supervisor.username,
+      atMobile: receiver.username,
       lines: [
         noOperation ? "### 自动转单C通知" : "### 自动转单B通知",
         noOperation
@@ -347,7 +390,8 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
         `- 标题：${order.title || "-"}`,
         `- 约定时间：${appointmentText}`,
         `- 原领取业务员：${sale.displayName || sale.username}`,
-        `- 接收主管：${supervisor.displayName || supervisor.username}`,
+        `- 接收对象：${receiverLabel}`,
+        `- 接收人：${receiver.displayName || receiver.username}`,
         `- 详情：[查看单据#${order.id}](${detailUrl})`,
       ],
     });
