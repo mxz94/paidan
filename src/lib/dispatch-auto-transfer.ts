@@ -210,7 +210,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     new Set(
       salesClaimedOverdue
         .map((item) => item.convertedToPreciseById)
-        .filter((id): id is number => Number.isInteger(id) && id > 0),
+        .filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0),
     ),
   );
   const preciseOwners = preciseOwnerIds.length
