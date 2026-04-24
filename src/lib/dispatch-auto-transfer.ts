@@ -118,7 +118,7 @@ async function transferToSupervisor(params: {
 
 export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?: string): Promise<AutoTransferSummary> {
   const now = new Date();
-  const before24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const before48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const before72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);
   const baseUrl = resolveBaseUrl(baseOrigin);
 
@@ -143,7 +143,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       status: "PENDING",
       claimedById: null,
       convertedToPreciseAt: null,
-      createdAt: { lte: before24h },
+      createdAt: { lte: before48h },
     },
     select: {
       id: true,
@@ -293,7 +293,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       tenantId: order.tenantId,
       fromClaimedById: null,
       supervisorId: supervisor.id,
-      remark: `系统自动转单A：未领取超24小时，转交门店主管 ${supervisor.displayName || supervisor.username}`,
+      remark: `系统自动转单A：未领取超48小时，转交门店主管 ${supervisor.displayName || supervisor.username}`,
     });
     if (!ok) continue;
 
@@ -302,11 +302,11 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
 
     const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
     await doNotify({
-      title: "自动转单A：未领取超24小时",
+      title: "自动转单A：未领取超48小时",
       atMobile: supervisor.username,
       lines: [
         "### 自动转单A通知",
-        "- 规则：未领取超过24小时",
+        "- 规则：未领取超过48小时",
         `- 单据ID：${order.id}`,
         `- 标题：${order.title || "-"}`,
         `- 区域/地址：${(order.region || "-") + " " + (order.address || "")}`.trim(),
