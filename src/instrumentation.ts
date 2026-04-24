@@ -21,7 +21,7 @@ async function runOnce() {
       runInactiveUserAutoDisable(),
     ]);
     console.log(
-      `[dispatch-auto-transfer] done pending24h=${dispatchSummary.pendingToSupervisorCount} sales72h=${dispatchSummary.salesOverdueToSupervisorCount} sales72hNoop=${dispatchSummary.salesNoopOverdueToSupervisorCount} skipped=${dispatchSummary.skippedNoSupervisorCount} notifyOK=${dispatchSummary.notifySentCount} notifyFail=${dispatchSummary.notifyFailedCount}`,
+              `[dispatch-auto-transfer] done pending48h=${dispatchSummary.pendingToSupervisorCount} sales72h=${dispatchSummary.salesOverdueToSupervisorCount} sales72hNoop=${dispatchSummary.salesNoopOverdueToSupervisorCount} skipped=${dispatchSummary.skippedNoSupervisorCount} notifyOK=${dispatchSummary.notifySentCount} notifyFail=${dispatchSummary.notifyFailedCount}`,
     );
     console.log(
       `[user-auto-disable] done disabled=${disableSummary.disabledCount} threshold=${disableSummary.thresholdAt}`,

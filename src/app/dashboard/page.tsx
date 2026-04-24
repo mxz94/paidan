@@ -756,7 +756,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                     </span>
                     <span className="font-bold text-rose-700">{r.total}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">未领取超24h：{r.pending24} · 进行中超72h：{r.claim72}</div>
+                  <div className="mt-1 text-xs text-slate-500">未领取超48h：{r.pending24} · 进行中超72h：{r.claim72}</div>
                 </div>
               ))
             ) : (
