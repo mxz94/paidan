@@ -122,7 +122,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
       : tab === "done"
         ? ({ updatedAt: "desc" } as const)
         : ({ createdAt: "desc" } as const);
-  const queryTake = tab === "new" ? undefined : 500;
+  const queryTake = undefined;
 
   const orders = await prisma.dispatchOrder.findMany({
     where: baseWhere,
@@ -160,7 +160,6 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
       },
       records: {
         orderBy: { createdAt: "desc" },
-        take: 20,
         select: {
           id: true,
           actionType: true,

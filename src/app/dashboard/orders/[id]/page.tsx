@@ -96,7 +96,6 @@ export default async function OrderDetailPage({
       convertedToPreciseBy: { select: { username: true, displayName: true } },
       records: {
         orderBy: { createdAt: "desc" },
-        take: 50,
         include: {
           operator: { select: { username: true, displayName: true } },
         },
