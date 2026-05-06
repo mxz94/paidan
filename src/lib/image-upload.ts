@@ -45,9 +45,21 @@ export async function saveUploadedFile(file: File, folder = "orders") {
   const ext = (() => {
     const raw = file.name || "";
     const dot = raw.lastIndexOf(".");
-    if (dot <= -1) return "";
-    const suffix = raw.slice(dot).toLowerCase();
-    return /^[.][a-z0-9]+$/.test(suffix) ? suffix : "";
+    const fromName = dot > -1 ? raw.slice(dot).toLowerCase() : "";
+    const safeFromName = /^[.][a-z0-9]+$/.test(fromName) ? fromName : "";
+    const fromMime = (() => {
+      const type = String(file.type || "").toLowerCase();
+      if (type.includes("mpeg")) return ".mp3";
+      if (type.includes("mp4") || type.includes("m4a")) return ".m4a";
+      if (type.includes("wav")) return ".wav";
+      if (type.includes("aac")) return ".aac";
+      if (type.includes("ogg")) return ".ogg";
+      if (type.includes("webm")) return ".webm";
+      if (type.includes("amr")) return ".amr";
+      if (type.includes("3gpp")) return ".3gp";
+      return "";
+    })();
+    return safeFromName || fromMime;
   })();
 
   const safeName = `${Date.now()}-${randomUUID()}${ext}`;

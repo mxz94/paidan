@@ -84,7 +84,9 @@ function cleanRecordRemark(remark: string | null | undefined) {
 
 function isAudioAttachment(url: string | null | undefined) {
   const value = String(url ?? "").toLowerCase();
-  return [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm"].some((ext) => value.endsWith(ext));
+  return [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".amr", ".3gp"].some((ext) =>
+    value.endsWith(ext),
+  );
 }
 
 function buildAmapNavUrl(item: OrderItem) {
