@@ -1,9 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import sharp from "sharp";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const execFileAsync = promisify(execFile);
 
 export async function saveCompressedImage(file: File, folder = "orders") {
   if (!file || file.size === 0) {
@@ -62,10 +65,43 @@ export async function saveUploadedFile(file: File, folder = "orders") {
     return safeFromName || fromMime;
   })();
 
+  const inputBuffer = Buffer.from(await file.arrayBuffer());
+  const isAudio =
+    String(file.type || "").toLowerCase().startsWith("audio/") ||
+    [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".amr", ".3gp"].includes(ext);
+
+  // Audio is transcoded to mp3 to maximize browser playback compatibility (especially for .amr).
+  if (isAudio) {
+    const tempName = `${Date.now()}-${randomUUID()}${ext || ".bin"}`;
+    const tempPath = path.join(uploadDir, tempName);
+    const mp3Name = `${Date.now()}-${randomUUID()}.mp3`;
+    const mp3Path = path.join(uploadDir, mp3Name);
+
+    await writeFile(tempPath, inputBuffer);
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-i",
+        tempPath,
+        "-vn",
+        "-acodec",
+        "libmp3lame",
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        mp3Path,
+      ]);
+      await unlink(tempPath).catch(() => undefined);
+      return `/uploads/${folder}/${mp3Name}`;
+    } catch {
+      await unlink(tempPath).catch(() => undefined);
+      // Fallback to original file when ffmpeg is unavailable.
+    }
+  }
+
   const safeName = `${Date.now()}-${randomUUID()}${ext}`;
   const outputPath = path.join(uploadDir, safeName);
-  const inputBuffer = Buffer.from(await file.arrayBuffer());
   await writeFile(outputPath, inputBuffer);
-
   return `/uploads/${folder}/${safeName}`;
 }

@@ -89,6 +89,19 @@ function isAudioAttachment(url: string | null | undefined) {
   );
 }
 
+function audioMimeByUrl(url: string) {
+  const value = String(url || "").toLowerCase();
+  if (value.endsWith(".mp3")) return "audio/mpeg";
+  if (value.endsWith(".wav")) return "audio/wav";
+  if (value.endsWith(".m4a")) return "audio/mp4";
+  if (value.endsWith(".aac")) return "audio/aac";
+  if (value.endsWith(".ogg")) return "audio/ogg";
+  if (value.endsWith(".webm")) return "audio/webm";
+  if (value.endsWith(".amr")) return "audio/amr";
+  if (value.endsWith(".3gp")) return "audio/3gpp";
+  return "";
+}
+
 function buildAmapNavUrl(item: OrderItem) {
   const name = item.title || `单据#${item.id}`;
   if (item.longitude != null && item.latitude != null) {
@@ -964,7 +977,8 @@ export function MobileOrdersPanel({
                             ) : null}
                       {record.photoUrl ? (
                         isAudioAttachment(record.photoUrl) ? (
-                          <audio controls preload="none" className="mt-2 w-full" src={record.photoUrl}>
+                          <audio controls preload="none" className="mt-2 w-full">
+                            <source src={record.photoUrl} type={audioMimeByUrl(record.photoUrl)} />
                             你的浏览器不支持音频播放。
                           </audio>
                         ) : (
