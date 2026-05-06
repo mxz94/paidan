@@ -16,7 +16,8 @@
     "lint": "eslint",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node prisma/seed.mjs",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:migrate:audio": "node scripts/migrate-record-audio-to-mp3.mjs"
   },
   "dependencies": {
     "@fontsource/noto-sans-sc": "^5.2.9",
