@@ -40,6 +40,11 @@ function cleanRecordRemark(remark: string | null | undefined) {
   return String(remark ?? "").replace(/\s*\[CLAIM_TYPE:(?:PRECISE|SERVICE)\]\s*/g, "").trim();
 }
 
+function isAudioAttachment(url: string | null | undefined) {
+  const value = String(url ?? "").toLowerCase();
+  return [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm"].some((ext) => value.endsWith(ext));
+}
+
 export default async function OrderDetailPage({
   params,
   searchParams,
@@ -293,15 +298,21 @@ export default async function OrderDetailPage({
                   <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">备注：{cleanRecordRemark(record.remark)}</p>
                 ) : null}
                 {record.photoUrl ? (
-                  <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
-                    <Image
-                      src={record.photoUrl}
-                      alt="流转记录附件"
-                      width={88}
-                      height={88}
-                      className="rounded-lg border border-slate-200 object-cover"
-                    />
-                  </a>
+                  isAudioAttachment(record.photoUrl) ? (
+                    <audio controls preload="none" className="mt-2 w-full max-w-sm" src={record.photoUrl}>
+                      你的浏览器不支持音频播放。
+                    </audio>
+                  ) : (
+                    <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                      <Image
+                        src={record.photoUrl}
+                        alt="流转记录附件"
+                        width={88}
+                        height={88}
+                        className="rounded-lg border border-slate-200 object-cover"
+                      />
+                    </a>
+                  )
                 ) : null}
               </div>
             ))}

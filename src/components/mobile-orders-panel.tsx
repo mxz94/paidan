@@ -82,6 +82,11 @@ function cleanRecordRemark(remark: string | null | undefined) {
   return String(remark ?? "").replace(/\s*\[CLAIM_TYPE:(?:PRECISE|SERVICE)\]\s*/g, "").trim();
 }
 
+function isAudioAttachment(url: string | null | undefined) {
+  const value = String(url ?? "").toLowerCase();
+  return [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm"].some((ext) => value.endsWith(ext));
+}
+
 function buildAmapNavUrl(item: OrderItem) {
   const name = item.title || `单据#${item.id}`;
   if (item.longitude != null && item.latitude != null) {
@@ -742,6 +747,16 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-slate-600">录音（必传）</label>
+                        <input
+                          name="audio"
+                          type="file"
+                          accept="audio/*"
+                          required
+                          className="block w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-700 file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-xs file:font-semibold"
+                        />
+                      </div>
                       <FormSubmitButton
                         pendingText="提交中..."
                         className="w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
@@ -945,11 +960,17 @@ export function MobileOrdersPanel({
                             {cleanRecordRemark(record.remark) ? (
                               <p className="mt-1 whitespace-pre-wrap text-slate-700">备注：{cleanRecordRemark(record.remark)}</p>
                             ) : null}
-                            {record.photoUrl ? (
-                              <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
-                                <Image src={record.photoUrl} alt="记录照片" width={56} height={56} className="rounded object-cover" />
-                              </a>
-                            ) : null}
+                      {record.photoUrl ? (
+                        isAudioAttachment(record.photoUrl) ? (
+                          <audio controls preload="none" className="mt-2 w-full" src={record.photoUrl}>
+                            你的浏览器不支持音频播放。
+                          </audio>
+                        ) : (
+                          <a href={record.photoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                            <Image src={record.photoUrl} alt="记录照片" width={56} height={56} className="rounded object-cover" />
+                          </a>
+                        )
+                      ) : null}
                           </li>
                         ))}
                       </ul>

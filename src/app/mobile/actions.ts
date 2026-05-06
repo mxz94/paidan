@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns, ensureUserManageColumns } from "@/lib/db-ensure";
-import { saveCompressedImage } from "@/lib/image-upload";
+import { saveCompressedImage, saveUploadedFile } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 import { ensureUserPackageBindingTable, getAllowedPackageIdsForUser } from "@/lib/user-package-bindings";
@@ -423,7 +423,7 @@ export async function finishDispatchOrder(formData: FormData): Promise<MobileAct
   const handledPhoto = formData.get("photo");
   const handledPhotoUrl = handledPhoto instanceof File ? await saveCompressedImage(handledPhoto, "orders") : undefined;
   if (handledPhotoUrl === "__TOO_LARGE__") {
-    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "图片不能超过10MB" });
+    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "文件不能超过10MB" });
   }
   const convertToPrecise = String(formData.get("convertToPrecise") ?? "") === "1";
 
@@ -504,10 +504,16 @@ export async function endDispatchOrder(formData: FormData): Promise<MobileAction
   if (!endRemark) {
     return respondMobileAction(formData, "doing", { ok: false, op: "end-remark", message: "不办理备注必填" });
   }
-  const endPhoto = formData.get("photo");
-  const endPhotoUrl = endPhoto instanceof File ? await saveCompressedImage(endPhoto, "orders") : undefined;
-  if (endPhotoUrl === "__TOO_LARGE__") {
-    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "图片不能超过10MB" });
+  const endAudio = formData.get("audio");
+  if (!(endAudio instanceof File) || endAudio.size <= 0) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "end-audio", message: "不办理必须上传录音" });
+  }
+  if (!String(endAudio.type || "").toLowerCase().startsWith("audio/")) {
+    return respondMobileAction(formData, "doing", { ok: false, op: "end-audio", message: "请上传音频格式录音" });
+  }
+  const endAudioUrl = await saveUploadedFile(endAudio, "records-audio");
+  if (endAudioUrl === "__TOO_LARGE__") {
+    return respondMobileAction(formData, "doing", { ok: false, op: "file", message: "文件不能超过10MB" });
   }
 
   const operatorId = Number(session.user.id);
@@ -539,7 +545,7 @@ export async function endDispatchOrder(formData: FormData): Promise<MobileAction
           tenantId,
           actionType: "END",
           remark: `单据不办理；原因：${endReason}${endRemark ? `；备注：${endRemark}` : ""}`,
-          photoUrl: endPhotoUrl,
+          photoUrl: endAudioUrl,
           operatorLongitude: snapshot.operatorLongitude,
           operatorLatitude: snapshot.operatorLatitude,
         },

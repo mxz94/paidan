@@ -29,3 +29,31 @@ export async function saveCompressedImage(file: File, folder = "orders") {
 
   return `/uploads/${folder}/${safeName}`;
 }
+
+export async function saveUploadedFile(file: File, folder = "orders") {
+  if (!file || file.size === 0) {
+    return undefined;
+  }
+
+  if (file.size > MAX_UPLOAD_SIZE) {
+    return "__TOO_LARGE__";
+  }
+
+  const uploadDir = path.join(process.cwd(), "public", "uploads", folder);
+  await mkdir(uploadDir, { recursive: true });
+
+  const ext = (() => {
+    const raw = file.name || "";
+    const dot = raw.lastIndexOf(".");
+    if (dot <= -1) return "";
+    const suffix = raw.slice(dot).toLowerCase();
+    return /^[.][a-z0-9]+$/.test(suffix) ? suffix : "";
+  })();
+
+  const safeName = `${Date.now()}-${randomUUID()}${ext}`;
+  const outputPath = path.join(uploadDir, safeName);
+  const inputBuffer = Buffer.from(await file.arrayBuffer());
+  await writeFile(outputPath, inputBuffer);
+
+  return `/uploads/${folder}/${safeName}`;
+}
