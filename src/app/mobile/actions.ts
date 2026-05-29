@@ -204,7 +204,7 @@ export async function claimDispatchOrder(formData: FormData) {
   if (!tenantId) redirect(buildMobileQuery(formData, "new", { claimed: "0" }));
 
   const snapshot = await getOperatorLocationSnapshot(operatorId);
-  const config = await getSystemConfigValues([
+  const config = await getSystemConfigValues(tenantId, [
     SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit,
     SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit,
     SYSTEM_CONFIG_KEYS.claimLimitDisabled,

@@ -1,7 +1,7 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ensureSystemConfigTable, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
+import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 import { saveSystemConfig } from "./actions";
 
@@ -22,44 +22,50 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   }
   const me = await getSessionUserWithTenant();
   const hasPermission = await hasMenuPermission(me.id, "system-config");
-  if (!Number(me.tenantId) || !hasPermission) {
+  const tenantId = Number(me.tenantId);
+  if (!tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 
-  await ensureSystemConfigTable();
   const params = await searchParams;
+
+  const config = await getSystemConfigValues(tenantId, [
+    SYSTEM_CONFIG_KEYS.webhookUrl,
+    SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit,
+    SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit,
+    SYSTEM_CONFIG_KEYS.claimLimitDisabled,
+  ]);
 
   const rows = (await prisma.$queryRaw`
     SELECT "key", "value", "updatedAt"
     FROM "SystemConfig"
-    WHERE "key" IN (
-      ${SYSTEM_CONFIG_KEYS.webhookUrl},
-      ${SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit},
-      ${SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit},
-      ${SYSTEM_CONFIG_KEYS.claimLimitDisabled}
-    )
+    WHERE "tenantId" = ${tenantId}
+      AND "key" IN (
+        ${SYSTEM_CONFIG_KEYS.webhookUrl},
+        ${SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit},
+        ${SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit},
+        ${SYSTEM_CONFIG_KEYS.claimLimitDisabled}
+      )
   `) as Array<{ key: string; value: string | null; updatedAt: string | Date }>;
 
-  const valueByKey = new Map<string, string>();
   let lastUpdatedAt: string | Date | null = null;
   for (const row of rows) {
-    valueByKey.set(row.key, row.value ?? "");
     if (!lastUpdatedAt || new Date(row.updatedAt).getTime() > new Date(lastUpdatedAt).getTime()) {
       lastUpdatedAt = row.updatedAt;
     }
   }
 
-  const webhookUrl = valueByKey.get(SYSTEM_CONFIG_KEYS.webhookUrl) ?? "";
-  const preciseDailyClaimLimit = Number(valueByKey.get(SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit) ?? "");
-  const serviceDailyClaimLimit = Number(valueByKey.get(SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit) ?? "");
-  const claimLimitDisabled = valueByKey.get(SYSTEM_CONFIG_KEYS.claimLimitDisabled) === "1";
+  const webhookUrl = config.get(SYSTEM_CONFIG_KEYS.webhookUrl) ?? "";
+  const preciseDailyClaimLimit = Number(config.get(SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit) ?? "");
+  const serviceDailyClaimLimit = Number(config.get(SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit) ?? "");
+  const claimLimitDisabled = config.get(SYSTEM_CONFIG_KEYS.claimLimitDisabled) === "1";
   const updatedAt = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString("zh-CN") : "-";
 
   return (
     <section className="space-y-6">
       <header className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <h1 className="text-2xl font-bold">参数配置</h1>
-        <p className="mt-2 text-sm text-slate-600">配置系统级参数，如消息通知 Webhook（可选）和每日领取上限。</p>
+        <p className="mt-2 text-sm text-slate-600">配置本租户参数，如消息通知 Webhook（可选）和每日领取上限。</p>
         {params.saved === "1" ? (
           <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">保存成功</p>
         ) : null}

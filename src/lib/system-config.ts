@@ -13,33 +13,110 @@ export const SYSTEM_CONFIG_DEFAULTS: Record<string, string> = {
   [SYSTEM_CONFIG_KEYS.claimLimitDisabled]: "0",
 };
 
-export async function ensureSystemConfigTable() {
+const ALL_CONFIG_KEYS = Object.values(SYSTEM_CONFIG_KEYS);
+
+type SystemConfigColumn = { name: string };
+
+async function getSystemConfigColumns(): Promise<Set<string>> {
+  const columns = (await prisma.$queryRawUnsafe(`PRAGMA table_info("SystemConfig");`)) as SystemConfigColumn[];
+  return new Set(columns.map((item) => item.name));
+}
+
+async function migrateLegacySystemConfigToTenantScoped() {
+  const legacyRows = (await prisma.$queryRawUnsafe(`
+    SELECT "key", "value", "updatedAt"
+    FROM "SystemConfig";
+  `)) as Array<{ key: string; value: string | null; updatedAt: string | Date }>;
+
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  const tenantIds = tenants.map((item) => item.id);
+  if (tenantIds.length === 0) {
+    await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
+    return;
+  }
+
   await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS "SystemConfig" (
-      "key" TEXT NOT NULL PRIMARY KEY,
+    CREATE TABLE "SystemConfig_new" (
+      "tenantId" INTEGER NOT NULL,
+      "key" TEXT NOT NULL,
       "value" TEXT,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY ("tenantId", "key")
     );
   `);
 
-  for (const [key, value] of Object.entries(SYSTEM_CONFIG_DEFAULTS)) {
+  const legacyByKey = new Map(legacyRows.map((row) => [row.key, row]));
+
+  for (const tenantId of tenantIds) {
+    for (const key of ALL_CONFIG_KEYS) {
+      const legacy = legacyByKey.get(key);
+      const value = legacy?.value ?? SYSTEM_CONFIG_DEFAULTS[key] ?? null;
+      const updatedAt = legacy?.updatedAt ?? new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "SystemConfig_new" ("tenantId", "key", "value", "updatedAt")
+        VALUES (${tenantId}, ${key}, ${value}, ${updatedAt})
+      `;
+    }
+  }
+
+  await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SystemConfig_new" RENAME TO "SystemConfig";`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
+}
+
+export async function ensureSystemConfigTable() {
+  const columns = await getSystemConfigColumns();
+
+  if (columns.size === 0) {
     await prisma.$executeRawUnsafe(`
-      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-      VALUES ('${key}', '${value}', CURRENT_TIMESTAMP)
-      ON CONFLICT("key") DO NOTHING;
+      CREATE TABLE "SystemConfig" (
+        "tenantId" INTEGER NOT NULL,
+        "key" TEXT NOT NULL,
+        "value" TEXT,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY ("tenantId", "key")
+      );
     `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
+    return;
+  }
+
+  if (!columns.has("tenantId")) {
+    await migrateLegacySystemConfigToTenantScoped();
   }
 }
 
-export async function getSystemConfigValues(keys: string[]) {
+export async function ensureTenantSystemConfigDefaults(tenantId: number) {
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    return;
+  }
   await ensureSystemConfigTable();
-  const result = new Map<string, string>();
 
-  for (const key of keys) {
+  for (const [key, value] of Object.entries(SYSTEM_CONFIG_DEFAULTS)) {
+    await prisma.$executeRaw`
+      INSERT INTO "SystemConfig" ("tenantId", "key", "value", "updatedAt")
+      VALUES (${tenantId}, ${key}, ${value}, CURRENT_TIMESTAMP)
+      ON CONFLICT("tenantId", "key") DO NOTHING
+    `;
+  }
+}
+
+export async function getSystemConfigValues(tenantId: number, keys: string[]) {
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    return new Map<string, string>();
+  }
+  await ensureSystemConfigTable();
+  await ensureTenantSystemConfigDefaults(tenantId);
+
+  const result = new Map<string, string>();
+  const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+
+  for (const key of uniqueKeys) {
     const rows = (await prisma.$queryRaw`
       SELECT "value"
       FROM "SystemConfig"
-      WHERE "key" = ${key}
+      WHERE "tenantId" = ${tenantId}
+        AND "key" = ${key}
       LIMIT 1
     `) as Array<{ value: string | null }>;
     const value = rows[0]?.value;
@@ -51,12 +128,33 @@ export async function getSystemConfigValues(keys: string[]) {
   return result;
 }
 
-export async function getSystemConfigNumber(key: string, defaultValue: number) {
-  const values = await getSystemConfigValues([key]);
+export async function getSystemConfigNumber(tenantId: number, key: string, defaultValue: number) {
+  const values = await getSystemConfigValues(tenantId, [key]);
   const raw = values.get(key);
   const value = Number(raw ?? "");
   if (!Number.isInteger(value) || value < 0) {
     return defaultValue;
   }
   return value;
+}
+
+export async function saveTenantSystemConfig(
+  tenantId: number,
+  entries: Array<{ key: string; value: string }>,
+) {
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    return;
+  }
+  await ensureSystemConfigTable();
+  await ensureTenantSystemConfigDefaults(tenantId);
+
+  for (const entry of entries) {
+    await prisma.$executeRaw`
+      INSERT INTO "SystemConfig" ("tenantId", "key", "value", "updatedAt")
+      VALUES (${tenantId}, ${entry.key}, ${entry.value}, CURRENT_TIMESTAMP)
+      ON CONFLICT("tenantId", "key") DO UPDATE SET
+        "value" = excluded."value",
+        "updatedAt" = CURRENT_TIMESTAMP
+    `;
+  }
 }

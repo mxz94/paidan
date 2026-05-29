@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { ensureSystemConfigTable, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
+import { saveTenantSystemConfig, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
 
 const DEFAULT_PRECISE_LIMIT = 3;
@@ -12,7 +11,8 @@ const DEFAULT_SERVICE_LIMIT = 20;
 export async function saveSystemConfig(formData: FormData) {
   const me = await getSessionUserWithTenant();
   const hasPermission = await hasMenuPermission(me.id, "system-config");
-  if (!Number(me.tenantId) || !hasPermission) {
+  const tenantId = Number(me.tenantId);
+  if (!tenantId || !hasPermission) {
     redirect("/dashboard");
   }
 
@@ -32,36 +32,11 @@ export async function saveSystemConfig(formData: FormData) {
     redirect("/dashboard/settings?err=limit");
   }
 
-  await ensureSystemConfigTable();
-  await prisma.$transaction([
-    prisma.$executeRaw`
-      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-      VALUES (${SYSTEM_CONFIG_KEYS.webhookUrl}, ${webhookUrl}, CURRENT_TIMESTAMP)
-      ON CONFLICT("key") DO UPDATE SET
-        "value" = excluded."value",
-        "updatedAt" = CURRENT_TIMESTAMP
-    `,
-    prisma.$executeRaw`
-      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-      VALUES (${SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit}, ${String(preciseLimit)}, CURRENT_TIMESTAMP)
-      ON CONFLICT("key") DO UPDATE SET
-        "value" = excluded."value",
-        "updatedAt" = CURRENT_TIMESTAMP
-    `,
-    prisma.$executeRaw`
-      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-      VALUES (${SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit}, ${String(serviceLimit)}, CURRENT_TIMESTAMP)
-      ON CONFLICT("key") DO UPDATE SET
-        "value" = excluded."value",
-        "updatedAt" = CURRENT_TIMESTAMP
-    `,
-    prisma.$executeRaw`
-      INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-      VALUES (${SYSTEM_CONFIG_KEYS.claimLimitDisabled}, ${claimLimitDisabled ? "1" : "0"}, CURRENT_TIMESTAMP)
-      ON CONFLICT("key") DO UPDATE SET
-        "value" = excluded."value",
-        "updatedAt" = CURRENT_TIMESTAMP
-    `,
+  await saveTenantSystemConfig(tenantId, [
+    { key: SYSTEM_CONFIG_KEYS.webhookUrl, value: webhookUrl },
+    { key: SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit, value: String(preciseLimit) },
+    { key: SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit, value: String(serviceLimit) },
+    { key: SYSTEM_CONFIG_KEYS.claimLimitDisabled, value: claimLimitDisabled ? "1" : "0" },
   ]);
 
   revalidatePath("/dashboard/settings");

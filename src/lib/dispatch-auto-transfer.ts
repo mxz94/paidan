@@ -134,8 +134,16 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     details: [],
   };
 
-  const config = await getSystemConfigValues([SYSTEM_CONFIG_KEYS.webhookUrl]);
-  const webhookUrl = (config.get(SYSTEM_CONFIG_KEYS.webhookUrl) ?? "").trim();
+  const webhookCache = new Map<number, string>();
+  const resolveWebhookUrl = async (tenantId: number) => {
+    if (webhookCache.has(tenantId)) {
+      return webhookCache.get(tenantId) ?? "";
+    }
+    const config = await getSystemConfigValues(tenantId, [SYSTEM_CONFIG_KEYS.webhookUrl]);
+    const webhookUrl = (config.get(SYSTEM_CONFIG_KEYS.webhookUrl) ?? "").trim();
+    webhookCache.set(tenantId, webhookUrl);
+    return webhookUrl;
+  };
 
   const pendingOrders = await prisma.dispatchOrder.findMany({
     where: {
@@ -266,7 +274,8 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     }
   }
 
-  const doNotify = async (payload: DingNotifyPayload) => {
+  const doNotify = async (tenantId: number, payload: DingNotifyPayload) => {
+    const webhookUrl = await resolveWebhookUrl(tenantId);
     if (!webhookUrl) return;
     try {
       await sendDingTalkWebhook(webhookUrl, payload);
@@ -301,7 +310,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     summary.details.push({ orderId: order.id, scenario: "pending_24h", supervisorId: supervisor.id });
 
     const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
-    await doNotify({
+    await doNotify(order.tenantId, {
       title: "自动转单A：未领取超48小时",
       atMobile: supervisor.username,
       lines: [
@@ -378,7 +387,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
 
     const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
     const appointmentText = order.appointmentAt ? new Date(order.appointmentAt).toLocaleString("zh-CN") : "-";
-    await doNotify({
+    await doNotify(order.tenantId, {
       title: noOperation ? "自动转单C：领取后72小时未操作" : "自动转单B：进行中超时",
       atMobile: receiver.username,
       lines: [

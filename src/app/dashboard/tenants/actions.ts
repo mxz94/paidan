@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { ensureTenantSystemConfigDefaults } from "@/lib/system-config";
 import { getSessionUserWithTenant, isSuperAdminRole } from "@/lib/tenant";
 
 const createTenantSchema = z.object({
@@ -87,6 +88,7 @@ export async function createTenant(formData: FormData) {
   });
 
   const adminRole = await ensureTenantBuiltinRoles(tenant.id);
+  await ensureTenantSystemConfigDefaults(tenant.id);
 
   const slug = parsed.data.name
     .trim()

@@ -203,11 +203,14 @@ async function ensureSchema() {
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "SystemConfig" (
-      "key" TEXT NOT NULL PRIMARY KEY,
+      "tenantId" INTEGER NOT NULL,
+      "key" TEXT NOT NULL,
       "value" TEXT,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY ("tenantId", "key")
     );
   `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
 }
 
 async function ensureTenantBuiltinRoles(tenantId, menus) {
@@ -416,21 +419,18 @@ async function main() {
     }
   }
 
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-    VALUES ('precise_daily_claim_limit', '3', CURRENT_TIMESTAMP)
-    ON CONFLICT("key") DO NOTHING;
-  `);
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-    VALUES ('service_daily_claim_limit', '20', CURRENT_TIMESTAMP)
-    ON CONFLICT("key") DO NOTHING;
-  `);
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO "SystemConfig" ("key", "value", "updatedAt")
-    VALUES ('claim_limit_disabled', '0', CURRENT_TIMESTAMP)
-    ON CONFLICT("key") DO NOTHING;
-  `);
+  const configDefaults = [
+    ["precise_daily_claim_limit", "3"],
+    ["service_daily_claim_limit", "20"],
+    ["claim_limit_disabled", "0"],
+  ];
+  for (const [key, value] of configDefaults) {
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "SystemConfig" ("tenantId", "key", "value", "updatedAt")
+      VALUES (${defaultTenant.id}, '${key}', '${value}', CURRENT_TIMESTAMP)
+      ON CONFLICT("tenantId", "key") DO NOTHING;
+    `);
+  }
 }
 
 main()
