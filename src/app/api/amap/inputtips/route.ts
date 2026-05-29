@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
+import { getTenantRegionContext } from "@/lib/tenant-regions";
 
 type TipItem = { name: string; address: string; longitude?: number; latitude?: number };
 type CacheEntry = { at: number; tips: TipItem[] };
@@ -59,11 +60,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, tips: [] as TipItem[] });
   }
 
+  const tenantId = Number(session.user.tenantId);
+  const regionCtx = await getTenantRegionContext(tenantId);
+
   try {
     const query = new URLSearchParams({
       key,
       keywords: keyword,
-      city: "洛阳",
+      city: regionCtx.amapCity,
       citylimit: "true",
       datatype: "all",
     });

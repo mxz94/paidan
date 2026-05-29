@@ -5,11 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { isRegionPresetCode } from "@/lib/regions";
 import { ensureTenantSystemConfigDefaults } from "@/lib/system-config";
+import { ensureTenantRegionCodeColumn } from "@/lib/db-ensure";
 import { getSessionUserWithTenant, isSuperAdminRole } from "@/lib/tenant";
 
 const createTenantSchema = z.object({
   name: z.string().trim().min(2).max(40),
+  regionCode: z.string().trim().optional(),
 });
 
 async function ensureTenantBuiltinRoles(tenantId: number) {
@@ -71,18 +74,25 @@ export async function createTenant(formData: FormData) {
     redirect("/dashboard");
   }
 
+  const regionCodeRaw = String(formData.get("regionCode") ?? "").trim();
   const parsed = createTenantSchema.safeParse({
     name: formData.get("name"),
+    regionCode: regionCodeRaw || undefined,
   });
   if (!parsed.success) {
     redirect("/dashboard/tenants?err=invalid");
   }
+  if (regionCodeRaw && !isRegionPresetCode(regionCodeRaw)) {
+    redirect("/dashboard/tenants?err=invalid");
+  }
 
+  await ensureTenantRegionCodeColumn();
   const tenant = await prisma.tenant.create({
     data: {
       name: parsed.data.name,
       code: `TENANT_${Date.now()}`,
       isActive: true,
+      regionCode: isRegionPresetCode(regionCodeRaw) ? regionCodeRaw : "luoyang",
     },
     select: { id: true, name: true },
   });
@@ -119,6 +129,30 @@ export async function createTenant(formData: FormData) {
   redirect(`/dashboard/tenants?created=1&name=${encodeURIComponent(tenant.name)}&username=${encodeURIComponent(username)}`);
 }
 
+export async function updateTenantRegion(formData: FormData) {
+  const me = await getSessionUserWithTenant();
+  if (!isSuperAdminRole(me.role.code)) {
+    redirect("/dashboard");
+  }
+
+  const tenantId = Number(formData.get("tenantId"));
+  const regionCode = String(formData.get("regionCode") ?? "").trim();
+  if (!Number.isInteger(tenantId) || tenantId <= 0 || !isRegionPresetCode(regionCode)) {
+    redirect("/dashboard/tenants?err=invalid");
+  }
+
+  await ensureTenantRegionCodeColumn();
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { regionCode },
+  });
+
+  revalidatePath("/dashboard/tenants");
+  revalidatePath("/dashboard/orders");
+  revalidatePath("/mobile");
+  redirect("/dashboard/tenants?regionUpdated=1");
+}
+
 export async function toggleTenantActive(formData: FormData) {
   const me = await getSessionUserWithTenant();
   if (!isSuperAdminRole(me.role.code)) {
@@ -142,4 +176,3 @@ export async function toggleTenantActive(formData: FormData) {
   revalidatePath("/dashboard/tenants");
   redirect("/dashboard/tenants?toggled=1");
 }
-

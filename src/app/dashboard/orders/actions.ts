@@ -10,6 +10,8 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { saveCompressedImage } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
+import { buildAddressCandidates, detectRegionByAddress } from "@/lib/regions";
+import { getTenantRegionContext, type TenantRegionContext } from "@/lib/tenant-regions";
 import { hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
 
 const createDispatchSchema = z.object({
@@ -50,42 +52,6 @@ const leadImportSchema = z.object({
   meetTime: z.string().trim().max(100).optional(),
   numberType: z.string().trim().min(1).max(100),
 });
-
-const LUOYANG_REGION_KEYWORDS = [
-  "老城区",
-  "西工区",
-  "瀍河回族区",
-  "涧西区",
-  "洛龙区",
-  "孟津区",
-  "偃师区",
-  "新安县",
-  "栾川县",
-  "嵩县",
-  "汝阳县",
-  "宜阳县",
-  "洛宁县",
-  "伊川县",
-  "伊滨区",
-];
-
-const REGION_ALIAS_TO_FULL: Array<[string, string]> = [
-  ["老城", "老城区"],
-  ["西工", "西工区"],
-  ["瀍河", "瀍河回族区"],
-  ["涧西", "涧西区"],
-  ["洛龙", "洛龙区"],
-  ["孟津", "孟津区"],
-  ["偃师", "偃师区"],
-  ["新安", "新安县"],
-  ["栾川", "栾川县"],
-  ["嵩县", "嵩县"],
-  ["汝阳", "汝阳县"],
-  ["宜阳", "宜阳县"],
-  ["洛宁", "洛宁县"],
-  ["伊川", "伊川县"],
-  ["伊滨", "伊滨区"],
-];
 
 function normalizeHeader(value: unknown) {
   return String(value ?? "")
@@ -163,33 +129,22 @@ function normalizeLooseAddress(text: string) {
   return text.replace(/\s+/g, "").replace(/[，,。；;、]/g, "");
 }
 
-function buildAddressCandidates(address: string) {
-  const raw = String(address || "").trim();
-  const compact = normalizeLooseAddress(raw);
-  const set = new Set<string>();
+function buildAddressCandidatesForTenant(address: string, regionCtx: TenantRegionContext) {
+  return buildAddressCandidates(address, regionCtx);
+}
 
-  if (raw) set.add(raw);
-  if (compact) set.add(compact);
-  if (compact && !compact.startsWith("洛阳市")) set.add(`洛阳市${compact}`);
-  if (compact && !compact.startsWith("河南省")) set.add(`河南省洛阳市${compact}`);
+function detectRegionByAddressForTenant(address: string, regionCtx: TenantRegionContext) {
+  return detectRegionByAddress(address, regionCtx.tree);
+}
 
-  for (const [alias, full] of REGION_ALIAS_TO_FULL) {
-    if (compact.includes(alias) && !compact.includes(full)) {
-      const replaced = compact.replace(alias, full);
-      set.add(replaced);
-      set.add(`洛阳市${replaced}`);
-      set.add(`河南省洛阳市${replaced}`);
-    }
-  }
-
-  if (compact.includes("城关") && !compact.includes("城关镇")) {
-    const withTown = compact.replace("城关", "城关镇");
-    set.add(withTown);
-    set.add(`洛阳市${withTown}`);
-    set.add(`河南省洛阳市${withTown}`);
-  }
-
-  return Array.from(set).filter(Boolean);
+function resolveAmapWebKey() {
+  return (
+    process.env.AMAP_WEB_SERVICE_KEY ||
+    process.env.AMAP_WEB_KEY ||
+    process.env.NEXT_PUBLIC_AMAP_KEY ||
+    process.env.VUE_APP_AMAP_KEY ||
+    ""
+  );
 }
 
 function parseInviteDate(text: string) {
@@ -210,24 +165,7 @@ function parseInviteDate(text: string) {
   return new Date(now.getFullYear(), month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
 }
 
-function detectRegionByAddress(address: string) {
-  const text = address.trim();
-  if (!text) return "";
-  const found = LUOYANG_REGION_KEYWORDS.find((item) => text.includes(item));
-  return found ?? "";
-}
-
-function resolveAmapWebKey() {
-  return (
-    process.env.AMAP_WEB_SERVICE_KEY ||
-    process.env.AMAP_WEB_KEY ||
-    process.env.NEXT_PUBLIC_AMAP_KEY ||
-    process.env.VUE_APP_AMAP_KEY ||
-    ""
-  );
-}
-
-async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
+async function geocodeAddress(address: string, amapCity: string, throttle?: () => Promise<void>) {
   const key = resolveAmapWebKey();
   const sig = process.env.AMAP_WEB_SERVICE_SIG || process.env.AMAP_WEB_SIG || "";
   if (!key) {
@@ -240,7 +178,7 @@ async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
     const search = new URLSearchParams({
       key,
       address,
-      city: "洛阳",
+      city: amapCity,
     });
     if (sig) {
       search.set("sig", sig);
@@ -273,7 +211,7 @@ async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
   }
 }
 
-async function inputTipsAddress(address: string, throttle?: () => Promise<void>) {
+async function inputTipsAddress(address: string, amapCity: string, throttle?: () => Promise<void>) {
   const key = resolveAmapWebKey();
   const sig = process.env.AMAP_WEB_SERVICE_SIG || process.env.AMAP_WEB_SIG || "";
   if (!key) {
@@ -286,7 +224,7 @@ async function inputTipsAddress(address: string, throttle?: () => Promise<void>)
     const search = new URLSearchParams({
       key,
       keywords: address,
-      city: "洛阳",
+      city: amapCity,
       citylimit: "true",
       datatype: "all",
     });
@@ -319,11 +257,11 @@ async function inputTipsAddress(address: string, throttle?: () => Promise<void>)
   }
 }
 
-async function geocodeAddressWithRetry(address: string, throttle: () => Promise<void>) {
-  const candidates = buildAddressCandidates(address);
+async function geocodeAddressWithRetry(address: string, regionCtx: TenantRegionContext, throttle: () => Promise<void>) {
+  const candidates = buildAddressCandidatesForTenant(address, regionCtx);
   for (const candidate of candidates) {
     for (let i = 0; i <= GEOCODE_MAX_RETRY; i += 1) {
-      const result = await geocodeAddress(candidate, throttle);
+      const result = await geocodeAddress(candidate, regionCtx.amapCity, throttle);
       if (result.longitude != null && result.latitude != null) {
         return result;
       }
@@ -334,7 +272,7 @@ async function geocodeAddressWithRetry(address: string, throttle: () => Promise<
   }
 
   for (const candidate of candidates) {
-    const tipResult = await inputTipsAddress(candidate, throttle);
+    const tipResult = await inputTipsAddress(candidate, regionCtx.amapCity, throttle);
     if (tipResult.longitude != null && tipResult.latitude != null) {
       return tipResult;
     }
@@ -517,6 +455,7 @@ export async function importDispatchOrders(formData: FormData) {
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=import_invalid");
   }
+  const regionCtx = await getTenantRegionContext(Number(me.tenantId));
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size <= 0) {
@@ -617,7 +556,7 @@ export async function importDispatchOrders(formData: FormData) {
       const addressKey = parsed.data.address.trim();
       let geocode = geocodeCache.get(addressKey);
       if (!geocode) {
-        geocode = await geocodeAddressWithRetry(parsed.data.address, geocodeThrottle);
+        geocode = await geocodeAddressWithRetry(parsed.data.address, regionCtx, geocodeThrottle);
         geocodeCache.set(addressKey, geocode);
       }
       longitude = longitude ?? geocode.longitude;
@@ -692,6 +631,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
   if (!me?.tenantId) {
     redirect("/dashboard/orders?err=import_invalid");
   }
+  const regionCtx = await getTenantRegionContext(Number(me.tenantId));
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size <= 0) {
@@ -793,7 +733,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
     const addressKey = parsed.data.address.trim();
     let geocode = geocodeCache.get(addressKey);
     if (!geocode) {
-      geocode = await geocodeAddressWithRetry(parsed.data.address, geocodeThrottle);
+      geocode = await geocodeAddressWithRetry(parsed.data.address, regionCtx, geocodeThrottle);
       geocodeCache.set(addressKey, geocode);
     }
     const meetRemark = parsed.data.meetTime ? `邀约见面时间：${parsed.data.meetTime}` : "";
@@ -801,7 +741,7 @@ export async function importLeadDispatchOrders(formData: FormData) {
     createPayloads.push({
       title: parsed.data.numberType,
       packageId: matchedPackage?.id ?? null,
-      region: detectRegionByAddress(parsed.data.address),
+      region: detectRegionByAddressForTenant(parsed.data.address, regionCtx),
       address: parsed.data.address,
       longitude: geocode.longitude,
       latitude: geocode.latitude,

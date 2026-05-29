@@ -4,7 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
-import { LUOYANG_REGIONS } from "@/lib/regions";
+import { getTenantRegionContext } from "@/lib/tenant-regions";
 import { canAccessMobile } from "@/lib/user-access";
 import { touchUserDailyActive } from "@/lib/user-activity";
 import { ensureUserPackageBindingTable, getAllowedPackageIdsForUser } from "@/lib/user-package-bindings";
@@ -116,7 +116,8 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
     baseWhere.claimedById = me.id;
   }
 
-  const regions = [...LUOYANG_REGIONS];
+  const regionCtx = await getTenantRegionContext(Number(me.tenantId));
+  const regions = regionCtx.districts;
   const queryOrderBy =
     tab === "doing"
       ? ({ claimedAt: "desc" } as const)
@@ -268,6 +269,7 @@ export default async function MobilePage({ searchParams }: { searchParams: Searc
           tab={tab}
           accessMode={me.accessMode}
           regions={regions}
+          amapCity={regionCtx.amapCity}
           initialSelectedRegion={selectedRegionRaw}
           orders={ordersWithDistance.map((item) => ({
             id: item.id,

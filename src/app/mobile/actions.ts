@@ -6,6 +6,8 @@ import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns, ensureUserManageColumns } from "@/lib/db-ensure";
 import { saveCompressedImage, saveUploadedFile } from "@/lib/image-upload";
+import { getTenantRegionContext } from "@/lib/tenant-regions";
+import { buildAddressCandidates } from "@/lib/regions";
 import { prisma } from "@/lib/prisma";
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 import { ensureUserPackageBindingTable, getAllowedPackageIdsForUser } from "@/lib/user-package-bindings";
@@ -119,24 +121,8 @@ function normalizeLooseAddress(text: string) {
   return text.replace(/\s+/g, "").replace(/[，,。；;、]/g, "");
 }
 
-function buildAddressCandidates(address: string) {
-  const raw = String(address || "").trim();
-  const compact = normalizeLooseAddress(raw);
-  const set = new Set<string>();
-
-  if (raw) set.add(raw);
-  if (compact) set.add(compact);
-  if (compact && !compact.startsWith("洛阳市")) set.add(`洛阳市${compact}`);
-  if (compact && !compact.startsWith("河南省")) set.add(`河南省洛阳市${compact}`);
-
-  if (compact.includes("城关") && !compact.includes("城关镇")) {
-    const withTown = compact.replace("城关", "城关镇");
-    set.add(withTown);
-    set.add(`洛阳市${withTown}`);
-    set.add(`河南省洛阳市${withTown}`);
-  }
-
-  return Array.from(set).filter(Boolean);
+function buildAddressCandidatesForTenant(address: string, regionCtx: Awaited<ReturnType<typeof getTenantRegionContext>>) {
+  return buildAddressCandidates(address, regionCtx);
 }
 
 function resolveAmapWebKey() {
@@ -149,14 +135,18 @@ function resolveAmapWebKey() {
   );
 }
 
-async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
+async function geocodeAddress(
+  address: string,
+  amapCity: string,
+  throttle?: () => Promise<void>,
+) {
   const key = resolveAmapWebKey();
   const sig = process.env.AMAP_WEB_SERVICE_SIG || process.env.AMAP_WEB_SIG || "";
   if (!key) return { longitude: null as number | null, latitude: null as number | null };
 
   try {
     if (throttle) await throttle();
-    const search = new URLSearchParams({ key, address, city: "洛阳" });
+    const search = new URLSearchParams({ key, address, city: amapCity });
     if (sig) search.set("sig", sig);
     const resp = await fetch(`https://restapi.amap.com/v3/geocode/geo?${search.toString()}`, { cache: "no-store" });
     if (!resp.ok) return { longitude: null as number | null, latitude: null as number | null };
@@ -175,11 +165,15 @@ async function geocodeAddress(address: string, throttle?: () => Promise<void>) {
   }
 }
 
-async function geocodeAddressWithRetry(address: string, throttle: () => Promise<void>) {
-  const candidates = buildAddressCandidates(address);
+async function geocodeAddressWithRetry(
+  address: string,
+  regionCtx: Awaited<ReturnType<typeof getTenantRegionContext>>,
+  throttle: () => Promise<void>,
+) {
+  const candidates = buildAddressCandidatesForTenant(address, regionCtx);
   for (const candidate of candidates) {
     for (let i = 0; i <= GEOCODE_MAX_RETRY; i += 1) {
-      const result = await geocodeAddress(candidate, throttle);
+      const result = await geocodeAddress(candidate, regionCtx.amapCity, throttle);
       if (result.longitude != null && result.latitude != null) return result;
       if (i < GEOCODE_MAX_RETRY) await sleep(180 * (i + 1));
     }
@@ -606,8 +600,9 @@ export async function rescheduleDispatchOrder(formData: FormData): Promise<Mobil
   let finalLongitude = order.longitude ?? null;
   let finalLatitude = order.latitude ?? null;
   if (finalAddress) {
+    const regionCtx = await getTenantRegionContext(tenantId);
     const geocodeThrottle = createGeocodeThrottle(GEOCODE_MIN_INTERVAL_MS);
-    const geo = await geocodeAddressWithRetry(finalAddress, geocodeThrottle);
+    const geo = await geocodeAddressWithRetry(finalAddress, regionCtx, geocodeThrottle);
     if (geo.longitude != null && geo.latitude != null) {
       finalLongitude = geo.longitude;
       finalLatitude = geo.latitude;
@@ -692,11 +687,12 @@ export async function convertDispatchOrderToPrecise(formData: FormData): Promise
     return respondMobileAction(formData, "doing", { ok: false, op: "convert-date", message: "约定时间需在未来15天内" });
   }
 
+  const regionCtx = await getTenantRegionContext(tenantId);
   const geocodeThrottle = createGeocodeThrottle(GEOCODE_MIN_INTERVAL_MS);
   let longitude: number | null = null;
   let latitude: number | null = null;
   if (address) {
-    const geo = await geocodeAddressWithRetry(address, geocodeThrottle);
+    const geo = await geocodeAddressWithRetry(address, regionCtx, geocodeThrottle);
     longitude = geo.longitude;
     latitude = geo.latitude;
   }

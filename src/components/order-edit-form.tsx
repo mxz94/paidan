@@ -5,9 +5,9 @@ import { useMemo, useState } from "react";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
 import {
   composeRegionValue,
-  getLuoyangTowns,
+  getTowns,
   parseRegionValue,
-  type LuoyangRegionNode,
+  type RegionNode,
 } from "@/lib/regions";
 
 type PackageOption = {
@@ -29,7 +29,8 @@ type Props = {
   remark: string;
   packages: PackageOption[];
   customerTypes: string[];
-  regionTree: LuoyangRegionNode[];
+  regionTree: RegionNode[];
+  amapCity: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -47,9 +48,10 @@ export function OrderEditForm({
   packages,
   customerTypes,
   regionTree,
+  amapCity,
   action,
 }: Props) {
-  const parsedRegion = useMemo(() => parseRegionValue(region), [region]);
+  const parsedRegion = useMemo(() => parseRegionValue(region, regionTree), [region, regionTree]);
   const [district, setDistrict] = useState(parsedRegion.district);
   const [town, setTown] = useState(parsedRegion.town);
 
@@ -58,7 +60,7 @@ export function OrderEditForm({
   const [latitudeValue, setLatitudeValue] = useState(latitude != null ? String(latitude) : "");
   const [submitError, setSubmitError] = useState("");
 
-  const towns = getLuoyangTowns(district);
+  const towns = getTowns(regionTree, district);
   const regionValue = composeRegionValue(district, town);
 
   return (
@@ -160,6 +162,7 @@ export function OrderEditForm({
             />
             <AmapPickerModal
               iconOnly
+              city={amapCity}
               initialAddress={addressValue}
               initialLongitude={longitudeValue ? Number(longitudeValue) : undefined}
               initialLatitude={latitudeValue ? Number(latitudeValue) : undefined}

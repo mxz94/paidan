@@ -26,9 +26,11 @@ export default function LoginPage() {
       if (result?.ok) {
         try {
           const resp = await fetch("/api/auth/session", { cache: "no-store" });
-          const session = (await resp.json()) as { user?: { accessMode?: string; username?: string } };
-          const isAdminAccount = session?.user?.username === "admin";
-          if (session?.user?.accessMode === "SUPERVISOR" && !isAdminAccount) {
+          const session = (await resp.json()) as { user?: { accessMode?: string; roleCode?: string } };
+          const roleCode = session?.user?.roleCode ?? "";
+          const isAdminRole =
+            roleCode === "SUPER_ADMIN" || roleCode === "ADMIN" || roleCode.endsWith("_ADMIN");
+          if (session?.user?.accessMode === "SUPERVISOR" && !isAdminRole) {
             setShowSupervisorEntryPicker(true);
             return;
           }

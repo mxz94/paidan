@@ -26,6 +26,7 @@ async function ensureSchema() {
     );
   `);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Tenant_code_key" ON "Tenant"("code");`);
+  await ensureColumn("Tenant", `"regionCode" TEXT`);
 
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Role" (

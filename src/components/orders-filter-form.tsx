@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getLuoyangTowns } from "@/lib/regions";
+import { getTowns, type RegionNode } from "@/lib/regions";
 
 type UserOption = {
   id: number;
@@ -25,6 +25,7 @@ type Props = {
   timeStartValue: string;
   timeEndValue: string;
   districtOptions: string[];
+  regionTree: RegionNode[];
   filterUsers: UserOption[];
 };
 
@@ -41,7 +42,7 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 export function OrdersFilterForm(props: Props) {
   const router = useRouter();
   const [district, setDistrict] = useState(props.district);
-  const townOptions = useMemo(() => (district ? getLuoyangTowns(district) : []), [district]);
+  const townOptions = useMemo(() => (district ? getTowns(props.regionTree, district) : []), [district, props.regionTree]);
   const [town, setTown] = useState(props.town);
 
   return (
@@ -125,7 +126,7 @@ export function OrdersFilterForm(props: Props) {
             setTown("");
             return;
           }
-          const nextTowns = getLuoyangTowns(nextDistrict);
+          const nextTowns = getTowns(props.regionTree, nextDistrict);
           if (!nextTowns.includes(town)) {
             setTown("");
           }

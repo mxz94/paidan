@@ -57,6 +57,7 @@ type Props = {
   tab: string;
   accessMode: string;
   regions: string[];
+  amapCity: string;
   initialSelectedRegion: string;
   orders: OrderItem[];
 };
@@ -173,6 +174,7 @@ export function MobileOrdersPanel({
   tab,
   accessMode,
   regions,
+  amapCity,
   initialSelectedRegion,
   orders,
 }: Props) {
@@ -824,6 +826,7 @@ export function MobileOrdersPanel({
                       <div className="flex justify-end">
                         <AmapPickerModal
                           iconOnly
+                          city={amapCity}
                           initialAddress={rescheduleAddress}
                           initialLongitude={item.longitude ?? undefined}
                           initialLatitude={item.latitude ?? undefined}
@@ -890,6 +893,7 @@ export function MobileOrdersPanel({
                       <div className="flex justify-end">
                         <AmapPickerModal
                           iconOnly
+                          city={amapCity}
                           initialAddress={convertAddress}
                           initialLongitude={item.longitude ?? undefined}
                           initialLatitude={item.latitude ?? undefined}

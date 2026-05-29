@@ -143,11 +143,12 @@ model DispatchOrderRecord {
 }
 
 model Tenant {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique
-  name      String
-  isActive  Boolean  @default(true)
-  roles     Role[]
+  id         Int      @id @default(autoincrement())
+  code       String   @unique
+  name       String
+  isActive   Boolean  @default(true)
+  regionCode String?
+  roles      Role[]
   users     User[]
   packages  Package[]
   orders    DispatchOrder[]

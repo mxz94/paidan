@@ -6,7 +6,7 @@ import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns } from "@/lib/db-ensure";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope, isTenantAdminRole } from "@/lib/tenant";
-import { LUOYANG_REGION_TREE } from "@/lib/regions";
+import { getTenantRegionContext } from "@/lib/tenant-regions";
 import { batchOperateDispatchOrders, deleteDispatchOrder } from "./actions";
 import { OrderCreateModal } from "@/components/order-create-modal";
 import { OrderListMapModal } from "@/components/order-list-map-modal";
@@ -41,7 +41,6 @@ type SearchParams = Promise<{
 }>;
 
 const customerTypes = ["精准", "客服"];
-const regionTree = [...LUOYANG_REGION_TREE];
 
 const errorText: Record<string, string> = {
   invalid: "提交失败：请检查必填项（备注、约定时间可不填）及手机号格式。",
@@ -231,6 +230,8 @@ export default async function OrdersPage({
   if (!me.tenantId) {
     redirect("/dashboard");
   }
+  const regionCtx = await getTenantRegionContext(me.tenantId);
+  const regionTree = regionCtx.tree;
   const isAdmin = isTenantAdminRole(me.role.code);
   const canViewTenantAll = hasTenantDataScope(me.role.code, me.role.dataScope);
   const keyword = String(params.keyword ?? "").trim();
@@ -550,6 +551,7 @@ export default async function OrdersPage({
           timeStartValue={timeStartValue}
           timeEndValue={timeEndValue}
           districtOptions={regionTree.map((item) => item.district)}
+          regionTree={regionTree}
           filterUsers={filterUsers}
         />
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -569,6 +571,7 @@ export default async function OrdersPage({
               packages={packages}
               customerTypes={customerTypes}
               regionTree={regionTree}
+              amapCity={regionCtx.amapCity}
               currentAccessMode={me.accessMode}
               action={async (formData) => {
                 "use server";

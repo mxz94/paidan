@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { OrderEditForm } from "@/components/order-edit-form";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { LUOYANG_REGION_TREE } from "@/lib/regions";
+import { getTenantRegionContext } from "@/lib/tenant-regions";
 import { getSessionUserWithTenant, hasStoreDataScope, hasTenantDataScope } from "@/lib/tenant";
 import { updateDispatchOrder } from "../../actions";
 
@@ -76,7 +76,8 @@ export default async function EditOrderPage({ params }: { params: Params }) {
 
   const selectedPackageId = order.packageId ?? packages[0].id;
   const customerTypes = ["精准", "客服"];
-  const regionTree = [...LUOYANG_REGION_TREE];
+  const regionCtx = await getTenantRegionContext(Number(me.tenantId));
+  const regionTree = regionCtx.tree;
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-5">
@@ -109,6 +110,7 @@ export default async function EditOrderPage({ params }: { params: Params }) {
         packages={packages}
         customerTypes={customerTypes}
         regionTree={regionTree}
+        amapCity={regionCtx.amapCity}
         action={updateDispatchOrder}
       />
     </section>

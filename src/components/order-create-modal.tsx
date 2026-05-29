@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
-import { composeRegionValue, getLuoyangTowns, type LuoyangRegionNode } from "@/lib/regions";
+import { composeRegionValue, getTowns, type RegionNode } from "@/lib/regions";
 
 type PackageOption = {
   id: number;
@@ -14,12 +14,13 @@ type PackageOption = {
 type Props = {
   packages: PackageOption[];
   customerTypes: string[];
-  regionTree: LuoyangRegionNode[];
+  regionTree: RegionNode[];
+  amapCity: string;
   currentAccessMode: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function OrderCreateModal({ packages, customerTypes, regionTree, currentAccessMode, action }: Props) {
+export function OrderCreateModal({ packages, customerTypes, regionTree, amapCity, currentAccessMode, action }: Props) {
   const [open, setOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -29,7 +30,7 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
   const [submitError, setSubmitError] = useState("");
 
   const isServiceUser = currentAccessMode === "SERVICE";
-  const towns = getLuoyangTowns(district);
+  const towns = getTowns(regionTree, district);
   const regionValue = composeRegionValue(district, town);
   const nowLocal = new Date();
   const toLocalInput = (value: Date) => {
@@ -178,6 +179,7 @@ export function OrderCreateModal({ packages, customerTypes, regionTree, currentA
                   <AmapPickerModal
                     iconOnly
                     autoSearchOnOpen
+                    city={amapCity}
                     initialAddress={addressSearchSeed}
                     initialLongitude={longitude ? Number(longitude) : undefined}
                     initialLatitude={latitude ? Number(latitude) : undefined}

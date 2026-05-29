@@ -156,3 +156,13 @@ export async function ensureSystemConfigTable() {
     throw new Error(`SystemConfig 表结构需要升级（缺少 tenantId）。${DB_SYNC_HINT}`);
   }
 }
+
+export async function ensureTenantRegionCodeColumn() {
+  const columns = (await prisma.$queryRawUnsafe(`PRAGMA table_info("Tenant");`)) as Array<{
+    name: string;
+  }>;
+  const names = new Set(columns.map((item) => item.name));
+  if (!names.has("regionCode")) {
+    await addColumnIfMissing(`ALTER TABLE "Tenant" ADD COLUMN "regionCode" TEXT;`);
+  }
+}

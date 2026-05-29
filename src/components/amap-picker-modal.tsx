@@ -12,6 +12,7 @@ type Props = {
   initialAddress: string;
   initialLongitude?: number;
   initialLatitude?: number;
+  city?: string;
   iconOnly?: boolean;
   autoSearchOnOpen?: boolean;
   onConfirm: (result: PickResult) => void;
@@ -71,6 +72,7 @@ export function AmapPickerModal({
   initialAddress,
   initialLongitude,
   initialLatitude,
+  city = "洛阳",
   iconOnly,
   autoSearchOnOpen = false,
   onConfirm,
@@ -117,7 +119,7 @@ export function AmapPickerModal({
         await new Promise<void>((resolve) => {
           window.AMap.plugin(["AMap.Geocoder"], () => resolve());
         });
-        geocoderRef.current = new window.AMap.Geocoder({ city: "洛阳" });
+        geocoderRef.current = new window.AMap.Geocoder({ city });
 
         if (pickedLng != null && pickedLat != null) {
           markerRef.current = new window.AMap.Marker({
@@ -178,7 +180,7 @@ export function AmapPickerModal({
       geocoderRef.current = null;
       openingSearchedRef.current = false;
     };
-  }, [autoSearchOnOpen, center, initialAddress, open, pickedLat, pickedLng]);
+  }, [autoSearchOnOpen, center, city, initialAddress, open, pickedLat, pickedLng]);
 
   useEffect(() => {
     if (!open) return;
