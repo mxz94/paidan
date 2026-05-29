@@ -24,13 +24,17 @@ export default function LoginPage() {
       });
 
       if (result?.ok) {
+        const isAdminAccount = username.trim().toLowerCase().includes("admin");
+        if (isAdminAccount) {
+          router.replace("/");
+          router.refresh();
+          return;
+        }
+
         try {
           const resp = await fetch("/api/auth/session", { cache: "no-store" });
-          const session = (await resp.json()) as { user?: { accessMode?: string; roleCode?: string } };
-          const roleCode = session?.user?.roleCode ?? "";
-          const isAdminRole =
-            roleCode === "SUPER_ADMIN" || roleCode === "ADMIN" || roleCode.endsWith("_ADMIN");
-          if (session?.user?.accessMode === "SUPERVISOR" && !isAdminRole) {
+          const session = (await resp.json()) as { user?: { accessMode?: string } };
+          if (session?.user?.accessMode === "SUPERVISOR") {
             setShowSupervisorEntryPicker(true);
             return;
           }
