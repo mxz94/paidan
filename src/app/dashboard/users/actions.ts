@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUserWithTenant } from "@/lib/tenant";
 import { normalizeAccessMode } from "@/lib/user-access";
 import { ensureUserPackageBindingTable, replaceUserAllowedPackages } from "@/lib/user-package-bindings";
+import { isProtectedFromRemoteManagement, isRoleLockedUser } from "@/lib/protected-users";
 
 const createUserSchema = z.object({
   username: z.string().trim().min(3).max(30),
@@ -57,15 +58,7 @@ function isProtectedSystemUser(user?: {
   displayName?: string | null;
   roleCode?: string | null;
 }) {
-  const username = String(user?.username ?? "").toLowerCase();
-  const displayName = String(user?.displayName ?? "");
-  const roleCode = String(user?.roleCode ?? "");
-  return (
-    username === "admin" ||
-    username === "root" ||
-    displayName === "系统管理员" ||
-    roleCode === "SUPER_ADMIN"
-  );
+  return isProtectedFromRemoteManagement(user);
 }
 
 function normalizeHeader(value: unknown) {
@@ -456,7 +449,7 @@ export async function updateUser(formData: FormData) {
       isDeleted: false,
       ...(Number.isInteger(Number(me.storeId)) && Number(me.storeId) > 0 ? { storeId: Number(me.storeId) } : {}),
     },
-    select: { id: true, storeId: true, username: true, displayName: true, role: { select: { code: true } } },
+    select: { id: true, storeId: true, username: true, displayName: true, roleId: true, role: { select: { code: true } } },
   });
   if (!target) {
     redirect("/dashboard/users?err=notfound");
@@ -476,7 +469,16 @@ export async function updateUser(formData: FormData) {
   }
 
   const role = await prisma.role.findFirst({
-    where: { id: parsed.data.roleId, tenantId: Number(me.tenantId) },
+    where: {
+      id: isRoleLockedUser({
+        username: target.username,
+        displayName: target.displayName,
+        roleCode: target.role?.code,
+      })
+        ? target.roleId
+        : parsed.data.roleId,
+      tenantId: Number(me.tenantId),
+    },
     select: { id: true },
   });
   if (!role) {
@@ -496,7 +498,7 @@ export async function updateUser(formData: FormData) {
     data: {
       displayName: parsed.data.displayName,
       accessMode: parsed.data.accessMode,
-      roleId: parsed.data.roleId,
+      roleId: role.id,
       canClaimOrders: parsed.data.canClaimOrders,
       preciseClaimLimit: parsed.data.preciseClaimLimit ?? null,
       serviceClaimLimit: parsed.data.serviceClaimLimit ?? null,
