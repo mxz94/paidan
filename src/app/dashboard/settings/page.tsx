@@ -1,8 +1,9 @@
 ﻿import { redirect } from "next/navigation";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
+import { ensureSystemConfigTable } from "@/lib/db-ensure";
 import { getSessionUserWithTenant, hasMenuPermission } from "@/lib/tenant";
+import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 import { saveSystemConfig } from "./actions";
 
 type SearchParams = Promise<{ saved?: string; err?: string }>;
@@ -27,6 +28,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
     redirect("/dashboard");
   }
 
+  await ensureSystemConfigTable();
   const params = await searchParams;
 
   const config = await getSystemConfigValues(tenantId, [

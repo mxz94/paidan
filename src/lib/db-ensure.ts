@@ -121,3 +121,38 @@ export async function ensureUserManageColumns() {
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SERVICE' WHERE "accessMode" = 'BACKEND';`);
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "accessMode" = 'SALE' WHERE "accessMode" = 'MOBILE';`);
 }
+
+const DB_SYNC_HINT = "请先执行: npm run db:sync";
+
+async function getSystemConfigColumnNames() {
+  const columns = (await prisma.$queryRawUnsafe(`PRAGMA table_info("SystemConfig");`)) as Array<{
+    name: string;
+  }>;
+  return new Set(columns.map((item) => item.name));
+}
+
+async function createTenantScopedSystemConfigTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "SystemConfig" (
+      "tenantId" INTEGER NOT NULL,
+      "key" TEXT NOT NULL,
+      "value" TEXT,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY ("tenantId", "key")
+    );
+  `);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
+}
+
+export async function ensureSystemConfigTable() {
+  const columns = await getSystemConfigColumnNames();
+
+  if (columns.size === 0) {
+    await createTenantScopedSystemConfigTable();
+    return;
+  }
+
+  if (!columns.has("tenantId")) {
+    throw new Error(`SystemConfig 表结构需要升级（缺少 tenantId）。${DB_SYNC_HINT}`);
+  }
+}

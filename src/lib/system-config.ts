@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureSystemConfigTable } from "@/lib/db-ensure";
 
 export const SYSTEM_CONFIG_KEYS = {
   webhookUrl: "notify_webhook_url",
@@ -12,79 +13,6 @@ export const SYSTEM_CONFIG_DEFAULTS: Record<string, string> = {
   [SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit]: "20",
   [SYSTEM_CONFIG_KEYS.claimLimitDisabled]: "0",
 };
-
-const ALL_CONFIG_KEYS = Object.values(SYSTEM_CONFIG_KEYS);
-
-type SystemConfigColumn = { name: string };
-
-async function getSystemConfigColumns(): Promise<Set<string>> {
-  const columns = (await prisma.$queryRawUnsafe(`PRAGMA table_info("SystemConfig");`)) as SystemConfigColumn[];
-  return new Set(columns.map((item) => item.name));
-}
-
-async function migrateLegacySystemConfigToTenantScoped() {
-  const legacyRows = (await prisma.$queryRawUnsafe(`
-    SELECT "key", "value", "updatedAt"
-    FROM "SystemConfig";
-  `)) as Array<{ key: string; value: string | null; updatedAt: string | Date }>;
-
-  const tenants = await prisma.tenant.findMany({ select: { id: true } });
-  const tenantIds = tenants.map((item) => item.id);
-  if (tenantIds.length === 0) {
-    await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
-    return;
-  }
-
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE "SystemConfig_new" (
-      "tenantId" INTEGER NOT NULL,
-      "key" TEXT NOT NULL,
-      "value" TEXT,
-      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY ("tenantId", "key")
-    );
-  `);
-
-  const legacyByKey = new Map(legacyRows.map((row) => [row.key, row]));
-
-  for (const tenantId of tenantIds) {
-    for (const key of ALL_CONFIG_KEYS) {
-      const legacy = legacyByKey.get(key);
-      const value = legacy?.value ?? SYSTEM_CONFIG_DEFAULTS[key] ?? null;
-      const updatedAt = legacy?.updatedAt ?? new Date();
-      await prisma.$executeRaw`
-        INSERT INTO "SystemConfig_new" ("tenantId", "key", "value", "updatedAt")
-        VALUES (${tenantId}, ${key}, ${value}, ${updatedAt})
-      `;
-    }
-  }
-
-  await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "SystemConfig_new" RENAME TO "SystemConfig";`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
-}
-
-export async function ensureSystemConfigTable() {
-  const columns = await getSystemConfigColumns();
-
-  if (columns.size === 0) {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE "SystemConfig" (
-        "tenantId" INTEGER NOT NULL,
-        "key" TEXT NOT NULL,
-        "value" TEXT,
-        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY ("tenantId", "key")
-      );
-    `);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
-    return;
-  }
-
-  if (!columns.has("tenantId")) {
-    await migrateLegacySystemConfigToTenantScoped();
-  }
-}
 
 export async function ensureTenantSystemConfigDefaults(tenantId: number) {
   if (!Number.isInteger(tenantId) || tenantId <= 0) {

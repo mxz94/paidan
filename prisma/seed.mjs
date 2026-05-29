@@ -1,5 +1,7 @@
 ﻿import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -201,6 +203,31 @@ async function ensureSchema() {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_tenantId_idx" ON "Store"("tenantId");`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Store_managerUserId_idx" ON "Store"("managerUserId");`);
 
+  await ensureSystemConfigTenantScope();
+  await ensureAllTenantSystemConfigDefaults();
+}
+
+const SYSTEM_CONFIG_KEYS = {
+  webhookUrl: "notify_webhook_url",
+  preciseDailyClaimLimit: "precise_daily_claim_limit",
+  serviceDailyClaimLimit: "service_daily_claim_limit",
+  claimLimitDisabled: "claim_limit_disabled",
+};
+
+const SYSTEM_CONFIG_DEFAULTS = {
+  [SYSTEM_CONFIG_KEYS.preciseDailyClaimLimit]: "3",
+  [SYSTEM_CONFIG_KEYS.serviceDailyClaimLimit]: "20",
+  [SYSTEM_CONFIG_KEYS.claimLimitDisabled]: "0",
+};
+
+const ALL_SYSTEM_CONFIG_KEYS = Object.values(SYSTEM_CONFIG_KEYS);
+
+async function getSystemConfigColumnNames() {
+  const columns = await prisma.$queryRawUnsafe(`PRAGMA table_info("SystemConfig");`);
+  return new Set(columns.map((item) => item.name));
+}
+
+async function createTenantScopedSystemConfigTable() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "SystemConfig" (
       "tenantId" INTEGER NOT NULL,
@@ -211,6 +238,72 @@ async function ensureSchema() {
     );
   `);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
+}
+
+async function migrateLegacySystemConfigToTenantScoped() {
+  const legacyRows = await prisma.$queryRawUnsafe(`
+    SELECT "key", "value", "updatedAt"
+    FROM "SystemConfig";
+  `);
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  const tenantIds = tenants.map((item) => item.id);
+
+  if (tenantIds.length === 0) {
+    await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
+    await createTenantScopedSystemConfigTable();
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE "SystemConfig_new" (
+      "tenantId" INTEGER NOT NULL,
+      "key" TEXT NOT NULL,
+      "value" TEXT,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY ("tenantId", "key")
+    );
+  `);
+
+  const legacyByKey = new Map(legacyRows.map((row) => [row.key, row]));
+  for (const tenantId of tenantIds) {
+    for (const key of ALL_SYSTEM_CONFIG_KEYS) {
+      const legacy = legacyByKey.get(key);
+      const value = legacy?.value ?? SYSTEM_CONFIG_DEFAULTS[key] ?? null;
+      const updatedAt = legacy?.updatedAt ?? new Date();
+      await prisma.$executeRaw`
+        INSERT INTO "SystemConfig_new" ("tenantId", "key", "value", "updatedAt")
+        VALUES (${tenantId}, ${key}, ${value}, ${updatedAt})
+      `;
+    }
+  }
+
+  await prisma.$executeRawUnsafe(`DROP TABLE "SystemConfig";`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SystemConfig_new" RENAME TO "SystemConfig";`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SystemConfig_tenantId_idx" ON "SystemConfig"("tenantId");`);
+}
+
+async function ensureSystemConfigTenantScope() {
+  const columns = await getSystemConfigColumnNames();
+  if (columns.size === 0) {
+    await createTenantScopedSystemConfigTable();
+    return;
+  }
+  if (!columns.has("tenantId")) {
+    await migrateLegacySystemConfigToTenantScoped();
+  }
+}
+
+async function ensureAllTenantSystemConfigDefaults() {
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  for (const tenant of tenants) {
+    for (const [key, value] of Object.entries(SYSTEM_CONFIG_DEFAULTS)) {
+      await prisma.$executeRaw`
+        INSERT INTO "SystemConfig" ("tenantId", "key", "value", "updatedAt")
+        VALUES (${tenant.id}, ${key}, ${value}, CURRENT_TIMESTAMP)
+        ON CONFLICT("tenantId", "key") DO NOTHING
+      `;
+    }
+  }
 }
 
 async function ensureTenantBuiltinRoles(tenantId, menus) {
@@ -433,12 +526,19 @@ async function main() {
   }
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
-    console.error(error);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+export { ensureSchema, prisma };
+
+const isSeedCli =
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isSeedCli) {
+  main()
+    .then(async () => {
+      await prisma.$disconnect();
+    })
+    .catch(async (error) => {
+      console.error(error);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}
