@@ -24,7 +24,6 @@ type Props = {
   defaultPreciseClaimLimit?: number | null;
   defaultServiceClaimLimit?: number | null;
   defaultAllowedPackageIds?: number[];
-  roleLocked?: boolean;
   roles: RoleOption[];
   packages: PackageOption[];
   action: (formData: FormData) => void | Promise<void>;
@@ -40,7 +39,6 @@ export function UserEditModal({
   defaultPreciseClaimLimit = null,
   defaultServiceClaimLimit = null,
   defaultAllowedPackageIds = [],
-  roleLocked = false,
   roles = [],
   packages = [],
   action,
@@ -100,33 +98,22 @@ export function UserEditModal({
 
               <label className="block">
                 <span className="mb-1 block text-sm text-slate-600">角色</span>
-                {roleLocked ? (
-                  <>
-                    <input type="hidden" name="roleId" value={defaultRoleId} />
-                    <input
-                      value={safeRoles.find((role) => role.id === defaultRoleId)?.name ?? "管理员"}
-                      disabled
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
-                    />
-                  </>
-                ) : (
-                  <select
-                    name="roleId"
-                    required
-                    defaultValue={fallbackRoleId != null ? String(fallbackRoleId) : ""}
-                    disabled={safeRoles.length === 0}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                  >
-                    {safeRoles.length === 0 ? (
-                      <option value="">暂无可用角色</option>
-                    ) : null}
-                    {safeRoles.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <select
+                  name="roleId"
+                  required
+                  defaultValue={fallbackRoleId != null ? String(fallbackRoleId) : ""}
+                  disabled={safeRoles.length === 0}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                >
+                  {safeRoles.length === 0 ? (
+                    <option value="">暂无可用角色</option>
+                  ) : null}
+                  {safeRoles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="block">

@@ -5,7 +5,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { canAccessDashboard, canAccessMobile, normalizeAccessMode } from "@/lib/user-access";
 import { ensureUserManageColumns } from "@/lib/db-ensure";
-import { shouldSkipSupervisorEntryPicker } from "@/lib/protected-users";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -69,7 +68,7 @@ export const authOptions: NextAuthOptions = {
           roleName: user.role.name,
           roleDataScope: user.role.dataScope ?? "TENANT",
           accessMode,
-          loginTarget: shouldSkipSupervisorEntryPicker(user.role.code) ? "dashboard" : "auto",
+          loginTarget: "auto",
           tenantId: user.tenantId ? String(user.tenantId) : "",
           tenantCode: user.tenant?.code ?? "",
         };

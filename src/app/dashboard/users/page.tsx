@@ -9,7 +9,6 @@ import { UserImportModal } from "@/components/user-import-modal";
 import { UserLocationMapButton } from "@/components/user-location-map-button";
 import { UserLocationsMapModal } from "@/components/user-locations-map-modal";
 import { ensureUserPackageBindingTable, getAllowedPackageIdsMapForUsers } from "@/lib/user-package-bindings";
-import { isProtectedFromRemoteManagement, isRoleLockedUser } from "@/lib/protected-users";
 
 type SearchParams = Promise<{
   created?: string;
@@ -313,16 +312,11 @@ export default async function UsersPage({
             <tbody>
               {users.map((user) => (
                 (() => {
-                  const isProtectedUser = isProtectedFromRemoteManagement({
-                    username: user.username,
-                    displayName: user.displayName,
-                    roleCode: user.role.code,
-                  });
-                  const roleLocked = isRoleLockedUser({
-                    username: user.username,
-                    displayName: user.displayName,
-                    roleCode: user.role.code,
-                  });
+                  const isProtectedUser =
+                    user.username.toLowerCase() === "admin" ||
+                    user.username.toLowerCase() === "root" ||
+                    user.displayName === "系统管理员" ||
+                    user.role.code === "SUPER_ADMIN";
                   const canEditProtectedSelf = isProtectedUser && user.id === Number(session.user.id);
                   return (
                 <tr key={user.id} className="border-b border-slate-100">
@@ -363,7 +357,6 @@ export default async function UsersPage({
                           defaultDisplayName={user.displayName}
                           defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                           defaultRoleId={user.roleId}
-                          roleLocked={roleLocked}
                           defaultStoreName={user.store?.name ?? "-"}
                           defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                           defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
@@ -384,7 +377,6 @@ export default async function UsersPage({
                             defaultDisplayName={user.displayName}
                             defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                             defaultRoleId={user.roleId}
-                            roleLocked={roleLocked}
                             defaultStoreName={user.store?.name ?? "-"}
                             defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                             defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}

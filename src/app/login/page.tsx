@@ -1,9 +1,8 @@
 ﻿"use client";
 
 import { FormEvent, useState, useTransition } from "react";
-import { getSession, signIn } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { shouldSkipSupervisorEntryPicker } from "@/lib/protected-users";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,12 +25,12 @@ export default function LoginPage() {
 
       if (result?.ok) {
         try {
-          const session = await getSession();
-          const accessMode = session?.user?.accessMode;
-          const loginTarget = session?.user?.loginTarget ?? "auto";
+          const resp = await fetch("/api/auth/session", { cache: "no-store" });
+          const session = (await resp.json()) as { user?: { accessMode?: string; roleCode?: string } };
           const roleCode = session?.user?.roleCode ?? "";
-          const skipPicker = loginTarget !== "auto" || shouldSkipSupervisorEntryPicker(roleCode);
-          if (accessMode === "SUPERVISOR" && !skipPicker) {
+          const isAdminRole =
+            roleCode === "SUPER_ADMIN" || roleCode === "ADMIN" || roleCode.endsWith("_ADMIN");
+          if (session?.user?.accessMode === "SUPERVISOR" && !isAdminRole) {
             setShowSupervisorEntryPicker(true);
             return;
           }
