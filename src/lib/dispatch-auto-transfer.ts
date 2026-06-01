@@ -2,7 +2,7 @@
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 
 type TriggerSource = "cron" | "manual";
-type Scenario = "pending_24h" | "sales_72h_overdue" | "sales_72h_noop";
+type Scenario = "pending_72h" | "sales_72h_overdue" | "sales_72h_noop";
 
 type AutoTransferSummary = {
   source: TriggerSource;
@@ -118,7 +118,6 @@ async function transferToSupervisor(params: {
 
 export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?: string): Promise<AutoTransferSummary> {
   const now = new Date();
-  const before48h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const before72h = new Date(now.getTime() - 72 * 60 * 60 * 1000);
   const baseUrl = resolveBaseUrl(baseOrigin);
 
@@ -151,7 +150,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       status: "PENDING",
       claimedById: null,
       convertedToPreciseAt: null,
-      createdAt: { lte: before48h },
+      createdAt: { lte: before72h },
     },
     select: {
       id: true,
@@ -302,20 +301,20 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       tenantId: order.tenantId,
       fromClaimedById: null,
       supervisorId: supervisor.id,
-      remark: `系统自动转单A：未领取超48小时，转交门店主管 ${supervisor.displayName || supervisor.username}`,
+      remark: `系统自动转单A：未领取超72小时，转交门店主管 ${supervisor.displayName || supervisor.username}`,
     });
     if (!ok) continue;
 
     summary.pendingToSupervisorCount += 1;
-    summary.details.push({ orderId: order.id, scenario: "pending_24h", supervisorId: supervisor.id });
+    summary.details.push({ orderId: order.id, scenario: "pending_72h", supervisorId: supervisor.id });
 
     const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
     await doNotify(order.tenantId, {
-      title: "自动转单A：未领取超48小时",
+      title: "自动转单A：未领取超72小时",
       atMobile: supervisor.username,
       lines: [
         "### 自动转单A通知",
-        "- 规则：未领取超过48小时",
+        "- 规则：未领取超过72小时",
         `- 单据ID：${order.id}`,
         `- 标题：${order.title || "-"}`,
         `- 区域/地址：${(order.region || "-") + " " + (order.address || "")}`.trim(),

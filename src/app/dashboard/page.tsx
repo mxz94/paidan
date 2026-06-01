@@ -433,14 +433,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .sort((a, b) => b.rate - a.rate || b.closed - a.closed || b.total - a.total)
     .slice(0, 10);
 
-  const timeoutMap = new Map<number, { pending24: number; claim72: number }>();
+  const timeoutMap = new Map<number, { pending72: number; claim72: number }>();
   for (const row of timeoutTransferRecords) {
     const storeId = row.operator.storeId ?? 0;
     if (!storeId) continue;
-    const current = timeoutMap.get(storeId) ?? { pending24: 0, claim72: 0 };
+    const current = timeoutMap.get(storeId) ?? { pending72: 0, claim72: 0 };
     const remark = String(row.remark ?? "");
     if (remark.includes("系统自动转单A")) {
-      current.pending24 += 1;
+      current.pending72 += 1;
     } else if (remark.includes("系统自动转单B") || remark.includes("系统自动转单C")) {
       current.claim72 += 1;
     } else {
@@ -452,11 +452,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     .map(([storeId, x]) => ({
       storeId,
       name: storeNameMap.get(storeId) || `门店#${storeId}`,
-      pending24: x.pending24,
+      pending72: x.pending72,
       claim72: x.claim72,
-      total: x.pending24 + x.claim72,
+      total: x.pending72 + x.claim72,
     }))
-    .sort((a, b) => b.total - a.total || b.claim72 - a.claim72 || b.pending24 - a.pending24)
+    .sort((a, b) => b.total - a.total || b.claim72 - a.claim72 || b.pending72 - a.pending72)
     .slice(0, 10);
 
   const serviceEntryCountMap = new Map(serviceEntryRaw.map((x) => [x.createdById, x._count._all]));
@@ -756,7 +756,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                     </span>
                     <span className="font-bold text-rose-700">{r.total}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">未领取超48h：{r.pending24} · 进行中超72h：{r.claim72}</div>
+                  <div className="mt-1 text-xs text-slate-500">未领取超72h：{r.pending72} · 进行中超72h：{r.claim72}</div>
                 </div>
               ))
             ) : (
