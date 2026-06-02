@@ -23,19 +23,26 @@ export interface ShareReceivePlugin {
 }
 
 export class ShareReceiveWeb implements ShareReceivePlugin {
-  async setPendingOrderId() {}
+  async setPendingOrderId(_options: { orderId: number }) {}
 
   async clearPendingOrderId() {}
 
-  async consumePendingShare() {
+  async consumePendingShare(): Promise<ShareReceivedPayload | null> {
     return null;
   }
 
-  async readSharedFile() {
+  async readSharedFile(_options: {
+    path: string;
+    fileName?: string;
+    mimeType?: string;
+  }): Promise<{ base64: string; fileName: string; mimeType: string }> {
     throw new Error("ShareReceive is only available in the Android app.");
   }
 
-  async addListener() {
+  async addListener(
+    _eventName: "shareReceived",
+    _listenerFunc: (payload: ShareReceivedPayload) => void,
+  ): Promise<PluginListenerHandle> {
     return { remove: async () => undefined };
   }
 }
