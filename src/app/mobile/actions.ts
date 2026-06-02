@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { getAuthSession } from "@/lib/auth";
 import { ensureDispatchOrderBusinessColumns, ensureDispatchRecordGpsColumns, ensureUserManageColumns } from "@/lib/db-ensure";
 import { saveCompressedImage, saveUploadedFile } from "@/lib/image-upload";
+import { isLikelyAudioUpload } from "@/lib/audio-file";
 import { getTenantRegionContext } from "@/lib/tenant-regions";
 import { buildAddressCandidates } from "@/lib/regions";
 import { prisma } from "@/lib/prisma";
@@ -502,7 +503,7 @@ export async function endDispatchOrder(formData: FormData): Promise<MobileAction
   if (!(endAudio instanceof File) || endAudio.size <= 0) {
     return respondMobileAction(formData, "doing", { ok: false, op: "end-audio", message: "不办理必须上传录音" });
   }
-  if (!String(endAudio.type || "").toLowerCase().startsWith("audio/")) {
+  if (!isLikelyAudioUpload(endAudio)) {
     return respondMobileAction(formData, "doing", { ok: false, op: "end-audio", message: "请上传音频格式录音" });
   }
   const endAudioUrl = await saveUploadedFile(endAudio, "records-audio");

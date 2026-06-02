@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   claimDispatchOrder,
@@ -12,8 +12,15 @@ import {
   rescheduleDispatchOrder,
 } from "@/app/mobile/actions";
 import { AmapPickerModal } from "@/components/amap-picker-modal";
+import { EndOrderAudioField } from "@/components/end-order-audio-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
 import { RecordTrackMapButton } from "@/components/record-track-map-button";
+import {
+  consumePendingSharedAudio,
+  loadSharedAudioFile,
+  subscribeShareReceived,
+  type ShareReceivedPayload,
+} from "@/lib/capacitor/share-receive";
 
 type RecordItem = {
   id: number;
@@ -192,6 +199,8 @@ export function MobileOrdersPanel({
   const [finishHandledPhoneMap, setFinishHandledPhoneMap] = useState<Record<number, string>>({});
   const [endOrderId, setEndOrderId] = useState<number | null>(null);
   const [endReasonMap, setEndReasonMap] = useState<Record<number, string>>({});
+  const [endAudioMap, setEndAudioMap] = useState<Record<number, File>>({});
+  const [shareGuideOrderId, setShareGuideOrderId] = useState<number | null>(null);
   const [rescheduleOrderId, setRescheduleOrderId] = useState<number | null>(null);
   const [rescheduleAtMap, setRescheduleAtMap] = useState<Record<number, string>>({});
   const [rescheduleAddressMap, setRescheduleAddressMap] = useState<Record<number, string>>({});
@@ -364,6 +373,49 @@ export function MobileOrdersPanel({
     const timer = setTimeout(() => setActionHint(null), 2200);
     return () => clearTimeout(timer);
   }, [actionHint]);
+
+  const applySharedPayload = useCallback(async (payload: ShareReceivedPayload) => {
+    try {
+      const file = await loadSharedAudioFile(payload);
+      const targetOrderId =
+        payload.orderId > 0 ? payload.orderId : shareGuideOrderId ?? endOrderId ?? null;
+      if (!targetOrderId) {
+        setActionHint({ ok: false, text: "请先打开对应单据的不办理，再点「导入通话录音」。" });
+        return;
+      }
+      setEndAudioMap((prev) => ({ ...prev, [targetOrderId]: file }));
+      setEndOrderId(targetOrderId);
+      setShareGuideOrderId(null);
+      setActionHint({ ok: true, text: "通话录音已导入，请确认原因和备注后提交。" });
+    } catch {
+      setActionHint({ ok: false, text: "导入通话录音失败，请重试或改用从文件选择。" });
+    }
+  }, [endOrderId, shareGuideOrderId]);
+
+  useEffect(() => {
+    if (tab !== "doing") {
+      return;
+    }
+    let disposed = false;
+    let listenerHandle: { remove: () => void } | null = null;
+
+    void (async () => {
+      listenerHandle = await subscribeShareReceived((payload) => {
+        if (!disposed) {
+          void applySharedPayload(payload);
+        }
+      });
+      const pending = await consumePendingSharedAudio();
+      if (!disposed && pending) {
+        await applySharedPayload(pending.payload);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      listenerHandle?.remove();
+    };
+  }, [applySharedPayload, tab]);
 
   const runInPlaceAction = async (
     formData: FormData,
@@ -633,7 +685,11 @@ export function MobileOrdersPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        setEndOrderId(showEndForm ? null : item.id);
+                        const opening = !showEndForm;
+                        setEndOrderId(opening ? item.id : null);
+                        if (!opening && shareGuideOrderId === item.id) {
+                          setShareGuideOrderId(null);
+                        }
                         setFinishOrderId(null);
                         setRescheduleOrderId(null);
                         setConvertOrderId(null);
@@ -731,8 +787,20 @@ export function MobileOrdersPanel({
                   {showEndForm ? (
                     <form
                       action={async (formData) => {
+                        const audioFile = endAudioMap[item.id];
+                        if (!audioFile) {
+                          setActionHint({ ok: false, text: "请导入或选择通话录音。" });
+                          return;
+                        }
+                        formData.set("audio", audioFile);
                         await runInPlaceAction(formData, endDispatchOrder, () => {
                           setEndOrderId(null);
+                          setShareGuideOrderId(null);
+                          setEndAudioMap((prev) => {
+                            const next = { ...prev };
+                            delete next[item.id];
+                            return next;
+                          });
                         });
                       }}
                       className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-2"
@@ -764,16 +832,25 @@ export function MobileOrdersPanel({
                         rows={2}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       />
-                      <div className="space-y-1">
-                        <label className="block text-xs font-semibold text-slate-600">录音（必传）</label>
-                        <input
-                          name="audio"
-                          type="file"
-                          accept="audio/*"
-                          required
-                          className="block w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-700 file:mr-2 file:rounded file:border-0 file:bg-slate-100 file:px-2 file:py-1 file:text-xs file:font-semibold"
-                        />
-                      </div>
+                      <EndOrderAudioField
+                        orderId={item.id}
+                        audioFile={endAudioMap[item.id] ?? null}
+                        onAudioFileChange={(file) => {
+                          setEndAudioMap((prev) => {
+                            const next = { ...prev };
+                            if (file) {
+                              next[item.id] = file;
+                            } else {
+                              delete next[item.id];
+                            }
+                            return next;
+                          });
+                        }}
+                        shareGuideActive={shareGuideOrderId === item.id}
+                        onShareGuideActiveChange={(active) => {
+                          setShareGuideOrderId(active ? item.id : null);
+                        }}
+                      />
                       <FormSubmitButton
                         pendingText="提交中..."
                         className="w-full rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"

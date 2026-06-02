@@ -21,6 +21,7 @@
     "db:migrate:audio": "node scripts/migrate-record-audio-to-mp3.mjs"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.4",
     "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/space-grotesk": "^5.2.10",
     "@prisma/client": "^6.16.0",
@@ -35,9 +36,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.4",
     "@capacitor/cli": "^8.2.0",
-    "@tauri-apps/cli": "^2.1.0",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
