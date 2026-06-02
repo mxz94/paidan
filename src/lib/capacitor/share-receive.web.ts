@@ -1,3 +1,5 @@
+import type { PluginListenerHandle } from "@capacitor/core";
+
 export type ShareReceivedPayload = {
   orderId: number;
   path: string;
@@ -17,7 +19,7 @@ export interface ShareReceivePlugin {
   addListener(
     eventName: "shareReceived",
     listenerFunc: (payload: ShareReceivedPayload) => void,
-  ): Promise<{ remove: () => void }>;
+  ): Promise<PluginListenerHandle>;
 }
 
 export class ShareReceiveWeb implements ShareReceivePlugin {
@@ -34,6 +36,6 @@ export class ShareReceiveWeb implements ShareReceivePlugin {
   }
 
   async addListener() {
-    return { remove: () => undefined };
+    return { remove: async () => undefined };
   }
 }
