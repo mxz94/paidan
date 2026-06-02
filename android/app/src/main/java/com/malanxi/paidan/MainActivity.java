@@ -2,6 +2,7 @@ package com.malanxi.paidan;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 
@@ -28,7 +29,12 @@ public class MainActivity extends BridgeActivity {
         if (!Intent.ACTION_SEND.equals(intent.getAction())) {
             return;
         }
-        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        Uri uri;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class);
+        } else {
+            uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        }
         if (uri == null) {
             return;
         }
