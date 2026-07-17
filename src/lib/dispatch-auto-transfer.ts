@@ -2,7 +2,7 @@
 import { getSystemConfigValues, SYSTEM_CONFIG_KEYS } from "@/lib/system-config";
 
 type TriggerSource = "cron" | "manual";
-type Scenario = "pending_72h" | "sales_72h_overdue" | "sales_72h_noop";
+type Scenario = "sales_72h_overdue" | "sales_72h_noop";
 
 type AutoTransferSummary = {
   source: TriggerSource;
@@ -144,28 +144,6 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
     return webhookUrl;
   };
 
-  const pendingOrders = await prisma.dispatchOrder.findMany({
-    where: {
-      isDeleted: false,
-      status: "PENDING",
-      claimedById: null,
-      convertedToPreciseAt: null,
-      createdAt: { lte: before72h },
-    },
-    select: {
-      id: true,
-      tenantId: true,
-      title: true,
-      region: true,
-      address: true,
-      createdBy: {
-        select: { storeId: true, displayName: true, username: true },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 1000,
-  });
-
   const salesClaimedOverdue = await prisma.dispatchOrder.findMany({
     where: {
       isDeleted: false,
@@ -233,14 +211,6 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
   const preciseOwnerById = new Map(preciseOwners.map((item) => [item.id, item]));
 
   const allStorePairs = new Map<string, { tenantId: number; storeId: number }>();
-  for (const item of pendingOrders) {
-    if (item.createdBy.storeId) {
-      allStorePairs.set(`${item.tenantId}_${item.createdBy.storeId}`, {
-        tenantId: item.tenantId,
-        storeId: item.createdBy.storeId,
-      });
-    }
-  }
   for (const item of salesClaimedOverdue) {
     if (item.claimedBy?.storeId) {
       allStorePairs.set(`${item.tenantId}_${item.claimedBy.storeId}`, {
@@ -283,47 +253,6 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
       summary.notifyFailedCount += 1;
     }
   };
-
-  for (const order of pendingOrders) {
-    const storeId = order.createdBy.storeId;
-    if (!storeId) {
-      summary.skippedNoSupervisorCount += 1;
-      continue;
-    }
-    const supervisor = supervisorByStore.get(`${order.tenantId}_${storeId}`);
-    if (!supervisor) {
-      summary.skippedNoSupervisorCount += 1;
-      continue;
-    }
-
-    const ok = await transferToSupervisor({
-      orderId: order.id,
-      tenantId: order.tenantId,
-      fromClaimedById: null,
-      supervisorId: supervisor.id,
-      remark: `系统自动转单A：未领取超72小时，转交门店主管 ${supervisor.displayName || supervisor.username}`,
-    });
-    if (!ok) continue;
-
-    summary.pendingToSupervisorCount += 1;
-    summary.details.push({ orderId: order.id, scenario: "pending_72h", supervisorId: supervisor.id });
-
-    const detailUrl = `${baseUrl}/dashboard/orders/${order.id}`;
-    await doNotify(order.tenantId, {
-      title: "自动转单A：未领取超72小时",
-      atMobile: supervisor.username,
-      lines: [
-        "### 自动转单A通知",
-        "- 规则：未领取超过72小时",
-        `- 单据ID：${order.id}`,
-        `- 标题：${order.title || "-"}`,
-        `- 区域/地址：${(order.region || "-") + " " + (order.address || "")}`.trim(),
-        `- 原创建人：${order.createdBy.displayName || order.createdBy.username}`,
-        `- 接收主管：${supervisor.displayName || supervisor.username}`,
-        `- 详情：[查看单据#${order.id}](${detailUrl})`,
-      ],
-    });
-  }
 
   for (const order of salesClaimedOverdue) {
     const sale = order.claimedBy;
