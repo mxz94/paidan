@@ -31,6 +31,7 @@ const updateUserSchema = z.object({
   displayName: z.string().trim().min(2).max(30),
   accessMode: z.enum(["SUPERVISOR", "SERVICE", "SALE"]),
   roleId: z.coerce.number().int().positive(),
+  storeId: z.coerce.number().int().positive(),
   password: z.string().optional(),
   canClaimOrders: z.boolean().default(true),
   preciseClaimLimit: z.coerce.number().int().min(0).optional(),
@@ -425,6 +426,7 @@ export async function updateUser(formData: FormData) {
     displayName: formData.get("displayName"),
     accessMode: normalizeAccessMode(String(formData.get("userType") ?? "")),
     roleId: formData.get("roleId"),
+    storeId: formData.get("storeId"),
     password: String(formData.get("password") ?? "").trim() || undefined,
     canClaimOrders: String(formData.get("canClaimOrders") ?? "1") !== "0",
     preciseClaimLimit: String(formData.get("preciseClaimLimit") ?? "").trim()
@@ -471,8 +473,23 @@ export async function updateUser(formData: FormData) {
   ) {
     redirect("/dashboard/users?err=protected");
   }
-  if (!target.storeId) {
+
+  // 验证目标门店是否存在
+  const targetStore = await prisma.store.findFirst({
+    where: { id: parsed.data.storeId, tenantId: Number(me.tenantId), isDeleted: false },
+    select: { id: true },
+  });
+  if (!targetStore) {
     redirect("/dashboard/users?err=store");
+  }
+
+  // 如果用户类型改为主管，检查目标门店是否已有其他主管
+  if (parsed.data.accessMode === "SUPERVISOR") {
+    await ensureStoreSupervisorAvailable({
+      tenantId: Number(me.tenantId),
+      storeId: parsed.data.storeId,
+      excludeUserId: parsed.data.userId,
+    });
   }
 
   const role = await prisma.role.findFirst({
@@ -482,13 +499,6 @@ export async function updateUser(formData: FormData) {
   if (!role) {
     redirect("/dashboard/users?err=role");
   }
-  if (parsed.data.accessMode === "SUPERVISOR") {
-    await ensureStoreSupervisorAvailable({
-      tenantId: Number(me.tenantId),
-      storeId: target.storeId,
-      excludeUserId: parsed.data.userId,
-    });
-  }
 
   const passwordHash = parsed.data.password ? await bcrypt.hash(parsed.data.password, 10) : undefined;
   await prisma.user.update({
@@ -497,6 +507,7 @@ export async function updateUser(formData: FormData) {
       displayName: parsed.data.displayName,
       accessMode: parsed.data.accessMode,
       roleId: parsed.data.roleId,
+      storeId: parsed.data.storeId,
       canClaimOrders: parsed.data.canClaimOrders,
       preciseClaimLimit: parsed.data.preciseClaimLimit ?? null,
       serviceClaimLimit: parsed.data.serviceClaimLimit ?? null,

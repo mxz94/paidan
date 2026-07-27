@@ -357,12 +357,14 @@ export default async function UsersPage({
                           defaultDisplayName={user.displayName}
                           defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                           defaultRoleId={user.roleId}
+                          defaultStoreId={user.store?.id ?? null}
                           defaultStoreName={user.store?.name ?? "-"}
                           defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                           defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
                           defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
                           defaultAllowedPackageIds={allowedPackageMap.get(user.id) ?? []}
                           roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+                          stores={stores.map((item) => ({ id: item.id, name: item.name }))}
                           packages={packages.map((item) => ({ id: item.id, name: item.name, code: item.code }))}
                           action={async (formData) => {
                             "use server";
@@ -377,12 +379,14 @@ export default async function UsersPage({
                             defaultDisplayName={user.displayName}
                             defaultAccessMode={(user.accessMode as "SUPERVISOR" | "SERVICE" | "SALE")}
                             defaultRoleId={user.roleId}
+                            defaultStoreId={user.store?.id ?? null}
                             defaultStoreName={user.store?.name ?? "-"}
                             defaultCanClaimOrders={claimConfigMap.get(user.id)?.canClaimOrders ?? true}
                             defaultPreciseClaimLimit={claimConfigMap.get(user.id)?.preciseClaimLimit ?? null}
                             defaultServiceClaimLimit={claimConfigMap.get(user.id)?.serviceClaimLimit ?? null}
                             defaultAllowedPackageIds={allowedPackageMap.get(user.id) ?? []}
                             roles={roles.map((item) => ({ id: item.id, name: item.name }))}
+                            stores={stores.map((item) => ({ id: item.id, name: item.name }))}
                             packages={packages.map((item) => ({ id: item.id, name: item.name, code: item.code }))}
                             action={async (formData) => {
                               "use server";

@@ -14,17 +14,24 @@ type PackageOption = {
   code: string;
 };
 
+type StoreOption = {
+  id: number;
+  name: string;
+};
+
 type Props = {
   userId: number;
   defaultDisplayName: string;
   defaultAccessMode: "SUPERVISOR" | "SERVICE" | "SALE";
   defaultRoleId: number;
+  defaultStoreId?: number | null;
   defaultStoreName: string;
   defaultCanClaimOrders?: boolean;
   defaultPreciseClaimLimit?: number | null;
   defaultServiceClaimLimit?: number | null;
   defaultAllowedPackageIds?: number[];
   roles: RoleOption[];
+  stores?: StoreOption[];
   packages: PackageOption[];
   action: (formData: FormData) => void | Promise<void>;
 };
@@ -34,12 +41,14 @@ export function UserEditModal({
   defaultDisplayName,
   defaultAccessMode,
   defaultRoleId,
+  defaultStoreId = null,
   defaultStoreName,
   defaultCanClaimOrders = true,
   defaultPreciseClaimLimit = null,
   defaultServiceClaimLimit = null,
   defaultAllowedPackageIds = [],
   roles = [],
+  stores = [],
   packages = [],
   action,
 }: Props) {
@@ -118,11 +127,27 @@ export function UserEditModal({
 
               <label className="block">
                 <span className="mb-1 block text-sm text-slate-600">门店</span>
-                <input
-                  value={defaultStoreName || "-"}
-                  disabled
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
-                />
+                {stores.length > 0 ? (
+                  <select
+                    name="storeId"
+                    required
+                    defaultValue={defaultStoreId != null ? String(defaultStoreId) : ""}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="" disabled>请选择门店</option>
+                    {stores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={defaultStoreName || "-"}
+                    disabled
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
+                  />
+                )}
               </label>
 
               <label className="block">
