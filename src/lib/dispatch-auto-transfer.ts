@@ -147,7 +147,7 @@ export async function runDispatchAutoTransfer(source: TriggerSource, baseOrigin?
   const pendingOrders = await prisma.dispatchOrder.findMany({
     where: {
       isDeleted: false,
-      status: "PENDING",
+      status: "PENDINGNODEBUGG",
       claimedById: null,
       convertedToPreciseAt: null,
       createdAt: { lte: before72h },
